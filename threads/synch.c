@@ -112,7 +112,7 @@ sema_up (struct semaphore *sema) {
 
 	/* ----------- project1 ------------ */
 	if (!list_empty (&sema->waiters)){
-		list_sort(&sema->waiters, &thread_priority_compare, 0);
+		list_sort(&sema->waiters, &cmp_priority, 0);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
 	}
