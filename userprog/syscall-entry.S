@@ -43,7 +43,7 @@ check_intr:
 	jnb no_sti
 	sti                    /* restore interrupt */
 no_sti:
-	movabs $syscall_handler, %r12
+	movabs $syscall_handler, %r12	/* 시스템 콜 핸들러 부르기 */
 	call *%r12
 	popq %r15
 	popq %r14

@@ -151,10 +151,11 @@ struct thread {
 	int fd_idx;					// fd table에 open spot의 index
 	struct file **fd_table;   // file descriptor table의 시작주소 가리키게 초기화
 	struct file *running;			// 현재 스레드가 사용 중인 파일(load하고 있는 파일)
+
 	struct intr_frame parent_if;	/* Information of parent's frame */
-	struct list child_list; /* list of threads that are made by this thread */
+	struct list child_list; 		 /* list of threads that are made by this thread */
 	struct list_elem child_elem; /* elem for this thread's parent's child_list */
-	struct semaphore fork_sema; /* parent thread should wait while child thread copy parent */
+	struct semaphore fork_sema;  /* parent thread should wait while child thread copy parent */
 	struct semaphore wait_sema;
 	struct semaphore free_sema;
 	/* ------------------------------- */

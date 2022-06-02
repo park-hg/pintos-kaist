@@ -145,6 +145,7 @@ pdp_for_each (uint64_t *pdp,
 
 /* Apply FUNC to each available pte entries including kernel's. */
 bool
+// 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
 pml4_for_each (uint64_t *pml4, pte_for_each_func *func, void *aux) {
 	for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t *); i++) {
 		uint64_t *pdpe = ptov((uint64_t *) pml4[i]);

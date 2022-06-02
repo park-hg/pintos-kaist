@@ -75,8 +75,16 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	// printf ("system call! rax : %d\n", f->R.rax);
-	// thread_exit ();
+
+	// 시스템 호출 핸들러 syscall_handler()가 제어권을 얻을 때 시스템 호출 번호는 rax에 있고
+	// 인수는 %rdi, %rsi, %rdx, %r10, %r8, %r9의 순서로 전달됩니다.
+	// 1번째 인자: %rdi
+	// 2번째 인자: %rsi
+	// 3번째 인자: %rdx
+	// 4번째 인자: %r10
+	// 5번째 인자: %r8
+	// 6번째 인자: %r9
+
 
 	/* ---------- Project 2 ---------- */
 	switch(f->R.rax) {
@@ -131,41 +139,45 @@ syscall_handler (struct intr_frame *f UNUSED) {
 }
 
 /* ---------- Project 2 ---------- */
-void 
-check_address (const uint64_t *user_addr) {
+// 주소 값이 유저 영역 주소 값인지 확인 => 유저 영역을 벗어난 영역일 경우 프로세스 종료(exit(-1))
+void check_address (const uint64_t *user_addr) {
 	struct thread *curr = thread_current();
-	if (user_addr = NULL || !(is_user_vaddr(user_addr)) || pml4_get_page(curr->pml4, user_addr) == NULL) {
+	// is_user_vaddr =>Returns true if VADDR is a user virtual address.
+	// 유저 가상 메모리의 영역은 가상 주소 0부터 KERN_BASE까지이다.
+	if (user_addr = NULL || !(is_user_vaddr(user_addr))|| // 'KERN_BASE'보다 높은 값의 주소값을 가지는 경우 or 주소가 NULL인경우
+	pml4_get_page(curr->pml4, user_addr) == NULL)	// 포인터가 가리키는 주소가 유저 영역 내에 있지만 페이지로 할당하지 않은 영역인 경우 => 둘중하나만 써도되나 확인하기
+	{
 		exit(-1);
 	}
 }
 
-/* Check validity of given file descriptor in current thread fd_table */
-static struct file *
-get_file_from_fd_table(int fd) {
-	struct thread *curr = thread_current();
 
+/* Check validity of given file descriptor in current thread fd_table */
+// 프로세스의 파일 디스크립터 테이블을 검색하여 파일 객체의 주소를 리턴
+static struct file *get_file_from_fd_table(int fd) {
+	struct thread *curr = thread_current();
 	if (fd < 0 || fd >= FDCOUNT_LIMIT) {
 		return NULL;
 	}
-
+	// 파일 디스크립터에 해당하는 파일 객체를 리턴 
 	return curr->fd_table[fd];	/*return fd of current thread. if fd_table[fd] == NULL, it automatically returns NULL*/
 }
 
+
 /* Remove give fd from current thread fd_table */
-void
-remove_file_from_fdt(int fd)
+// 파일 디스크립터에 해당하는 파일을 닫고 해당 엔트리 초기화
+void remove_file_from_fdt(int fd)
 {
 	struct thread *cur = thread_current();
-
 	if (fd < 0 || fd >= FDCOUNT_LIMIT) /* Error - invalid fd */
 		return;
-
+	// File Descriptor에 해당하는 파일 객체의 파일을 제거
 	cur->fd_table[fd] = NULL;
 }
 
 /* Find available spot in fd_talbe, put file in  */
-int 
-add_file_to_fdt(struct file *file) {
+// 파일 객체에 대한 파일 디스크립터 생성
+int add_file_to_fdt(struct file *file) {
 	struct thread *curr = thread_current();
 	struct file **fdt = curr->fd_table;
 
@@ -181,27 +193,34 @@ add_file_to_fdt(struct file *file) {
 	return curr->fd_idx;
 }
 
-void 
-halt (void) {
+
+// 1. pintos를 종료시키는 시스템 콜
+void halt (void) {
 	power_off();
 }
 
+
+// 2. 현재 프로세스를 종료시키는 시스템 콜
 void exit(int status) {
+	// 실행중인 스레드 구조체를 가져옴
 	struct thread *curr = thread_current();
 	curr->exit_status = status;
-
+	// 프로세스 종료 메시지 출력
+	// 출력 양식: "프로세스이름: exit(종료상태)"
 	printf("%s: exit(%d)\n", thread_name(), status);
-	
+		// 스레드 종료
 	thread_exit();
 }
 
+// 3. 
 tid_t fork (const char *thread_name, struct intr_frame *f) {
 	// check_address(thread_name);
 	return process_fork(thread_name, f);
 }
 
-int
-exec(const char *cmd_line) {
+
+// 4. 
+int exec(const char *cmd_line) {
 	check_address(cmd_line);
 
 	char *cmd_line_cp;
@@ -221,36 +240,49 @@ exec(const char *cmd_line) {
 	return 0;
 }
 
-bool 
-create (const char *file, unsigned initial_size) {
+
+// 6. 파일을 생성하는 시스템 콜
+bool create (const char *file, unsigned initial_size) {
+	// 파일 이름과 크기에 해당하는 파일 생성
+	// 파일 생성 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
 	return filesys_create(file, initial_size);
 }
 
-bool 
-remove (const char *file) {
+
+// 7. 파일을 삭제하는 시스템 콜
+bool remove (const char *file) {
+	// 파일 이름에 해당하는 파일을 제거
+	// 파일 제거 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
 	return filesys_remove(file);
 }
 
-int
-open (const char *file) {
+
+// 8. 파일을 열 때 사용하는 시스템 콜
+int open (const char *file) {
 	check_address(file);
 	lock_acquire(&filesys_lock);
 
+	// 제대로 파일 생성됐는지 체크
 	if (file == NULL) {
 		lock_release(&filesys_lock);
 		return -1;
 	}
+
+	// 열려고 하는 파일구조체 받기
 	struct file *open_file = filesys_open(file);
 
+	// 파일이 없으면 종료
 	if (open_file == NULL) {
 		lock_release(&filesys_lock);
 		return -1;
 	}
-	
+
+	// 만들어진 파일을 스레드 내 fdt 테이블에 추가
 	int fd = add_file_to_fdt(open_file);
 
+	// 파일을 열수 없으면 -1반환
 	if (fd == -1) {
 		file_close(open_file);
 	}
@@ -259,62 +291,75 @@ open (const char *file) {
 	return fd;
 }
 
-int
-filesize (int fd) {
-	struct file *open_file = get_file_from_fd_table(fd);
-	
+
+// 9. 파일의 크기를 알려주는 시스템 콜
+int filesize (int fd) {
+	// 사이즈를 알고싶은 파일구조체 받기
+	struct file *open_file = get_file_from_fd_table(fd);	// => 파일 디스크립터에 해당하는 파일 객체를 리턴 
+	// 성공 시 파일의 크기를 반환, 실패 시 -1 반환
 	if (open_file == NULL) {
 		return -1;
 	}
+	// 파일의 크기를 알려주는 함수
 	return file_length(open_file);
 }
 
-int
-read (int fd, void *buffer, unsigned size) {
+
+// 10. 열린 파일의 데이터를 읽는 시스템 콜
+int read (int fd, void *buffer, unsigned size) {
+	// 유효한 주소인지 체크
 	check_address(buffer);
+	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 	lock_acquire(&filesys_lock);
 
-
-	int ret;
+	int read_count;
+	/* 파일 디스크립터를 이용하여 파일 객체 검색 */
 	struct file *file_obj = get_file_from_fd_table(fd);
 
 	if (file_obj == NULL) {	/* if no file in fdt, return -1 */
 		lock_release(&filesys_lock);
 		return -1;
 	}
-
 	/* STDIN */
+	/* 파일 디스크립터가 0일 경우 키보드에 입력을 버퍼에 저장 후
+		 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
 	if (fd == STDIN) {
 		int i;
 		unsigned char *buf = buffer;
 		for (i = 0; i < size; i++) {
+			// 키보드의 입력 버퍼에서 글자 하나씩을 받아 반환해주는 함수
 			char c = input_getc();
+			// 읽기 버퍼에 한 char씩 넣는다.
 			*buf++ = c;
+			// 종단문자 만나면 탈출
 			if (c == '\0')
 				break;
 		}
-
-		ret = i;
+		read_count = i;
 	}
 	/* STDOUT */
 	else if (fd == STDOUT) {
-		ret = -1;
+		read_count = -1;
 	}
 	else {	
-		ret = file_read(file_obj, buffer, size);
+		/* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저
+			 장 후 읽은 바이트 수를 리턴*/
+		read_count = file_read(file_obj, buffer, size);
 	}
-
 	lock_release(&filesys_lock);
-	
-	return ret;
+	// 읽은 바이트 수를 리턴
+	return read_count;
 }
 
-int
-write (int fd, const void *buffer, unsigned size) {
+
+// 11. 열린 파일의 데이터를 기록하는 시스템 콜
+int write (int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
+	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 	lock_acquire(&filesys_lock);
 
-	int ret;
+	int write_count;
+	/* 파일 디스크립터를 이용하여 파일 객체 검색 */
 	struct file *file_obj = get_file_from_fd_table(fd);
 	
 	if (file_obj == NULL) {
@@ -323,55 +368,61 @@ write (int fd, const void *buffer, unsigned size) {
 	}
 
 	/* STDOUT */
+	/* 파일 디스크립터가 1일 경우 버퍼에 저장된 값을 화면에 출력
+		 후 버퍼의 크기 리턴 (putbuf() 이용) */
 	if (fd == STDOUT) {
-		putbuf(buffer, size);		/* to print buffer strings on the display*/
-		ret = size;
+		putbuf(buffer, size);
+		write_count = size;
 	}
 	/* STDOUT */
 	else if (fd == STDIN) {
-		ret = -1;
+		write_count = -1;
 	}
+	/* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기
+		 만큼 파일에 기록후 기록한 바이트 수를 리턴 */
 	else {
-		ret = file_write(file_obj, buffer, size);
+		write_count = file_write(file_obj, buffer, size);
 	}
 
 	lock_release(&filesys_lock);
-
-	return ret;
+	// 기록한 바이트 수를 리턴
+	return write_count;
 }
 
-void
-seek (int fd, unsigned position) {
-	struct file *file_obj = get_file_from_fd_table(fd);
 
+// 12. 열린 파일의 위치(offset)를 이동하는 시스템 콜
+void seek (int fd, unsigned position) {
+	// 파일 디스크립터를 이용하여 파일 객체 검색
+	struct file *file_obj = get_file_from_fd_table(fd);
+	// file이 fdt에 없거나 해당 파일이 표준 입출력 파일인 경우.
 	if (file_obj == NULL) {
 		return;
 	}
-	
 	if (fd <= 1) {
 		return;
 	}
-	
+	// 해당 열린 파일의 위치(offset)를 position만큼 이동	
 	file_seek(file_obj, position);
 }
 
-unsigned
-tell (int fd) {
-	struct file *file_obj = get_file_from_fd_table(fd);
 
+// 13. 열린 파일의 위치(offset)를 알려주는 시스템 콜
+unsigned tell (int fd) {
+	// 파일 디스크립터를 이용하여 파일 객체 검색
+	struct file *file_obj = get_file_from_fd_table(fd);
 	if (file_obj == NULL) {
 		return;
 	}
-
 	if (fd <= 1) {
 		return;
 	}
-	
+	// 열린 파일의 위치를 반환	
 	file_tell(file_obj);	
 }
 
-void
-close (int fd) {
+
+// 14. 열린 파일을 닫는 시스템 콜
+void close (int fd) {
 	struct file *file_obj = get_file_from_fd_table(fd);
 
 	if (file_obj == NULL) {
