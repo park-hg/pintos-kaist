@@ -208,11 +208,11 @@ void exit(int status) {
 	// 프로세스 종료 메시지 출력
 	// 출력 양식: "프로세스이름: exit(종료상태)"
 	printf("%s: exit(%d)\n", thread_name(), status);
-		// 스레드 종료
+	// 스레드 종료
 	thread_exit();
 }
 
-// 3. 
+// 3. 현재 프로세스를 복사하는 시스템 콜
 tid_t fork (const char *thread_name, struct intr_frame *f) {
 	// check_address(thread_name);
 	return process_fork(thread_name, f);
@@ -222,7 +222,7 @@ tid_t fork (const char *thread_name, struct intr_frame *f) {
 // 4. 
 int exec(const char *cmd_line) {
 	check_address(cmd_line);
-
+	/* 인자로 받은 파일 이름 문자열을 복사하여 이 복사본을 인자로 process_exec() 실행*/
 	char *cmd_line_cp;
 	
 	int size = strlen(cmd_line);
@@ -235,8 +235,9 @@ int exec(const char *cmd_line) {
 	if (process_exec(cmd_line_cp) == -1) {
 		return -1;
 	}
-
+	/* Caller 프로세스는 do_iret() 후 돌아오지 못한다. */
 	NOT_REACHED();
+	// 이 값은 리턴되지 않는다. 즉, exec()은 오직 에러가 발생했을 때만 리턴한다.
 	return 0;
 }
 

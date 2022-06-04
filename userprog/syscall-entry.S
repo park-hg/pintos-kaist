@@ -4,11 +4,12 @@
 .globl syscall_entry
 .type syscall_entry, @function
 syscall_entry:
+	/* 시스템콜요청시 기존에 작업하던거(시스템콜 호출전꺼) 인터럽트 프레임에 있는걸 레지스터에 올린다.*/
 	movq %rbx, temp1(%rip)
 	movq %r12, temp2(%rip)     /* callee saved registers */
-	movq %rsp, %rbx            /* Store userland rsp    */
+	movq %rsp, %rbx            /* Store userland rsp    rsp저장*/
 	movabs $tss, %r12
-	movq (%r12), %r12
+	movq (%r12), %r12					/* 여기부터 커널!*/
 	movq 4(%r12), %rsp         /* Read ring0 rsp from the tss */
 	/* Now we are in the kernel stack */
 	push $(SEL_UDSEG)      /* if->ss */
@@ -43,6 +44,9 @@ check_intr:
 	jnb no_sti
 	sti                    /* restore interrupt */
 no_sti:
+	/* 인터럽트 프레임에 있는걸 레지스터에 넣는다. do_iret에서 함 */
+	/*  */
+	/* 커널 스택에 있는 데이터를 지움(이미 시스템콜을 호출한애꺼 - 아래 pop과정) */ 
 	movabs $syscall_handler, %r12	/* 시스템 콜 핸들러 부르기 */
 	call *%r12
 	popq %r15

@@ -91,13 +91,18 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *curr = thread_current();
 	// 메모리
 	memcpy(&curr->parent_if, if_, sizeof(struct intr_frame));
-
+	// printf("parent_tid : %d\n", parent->tid);
+	// printf("current_tid0 : %d\n", curr->tid);
 	tid_t tid = thread_create(name, curr->priority, __do_fork, curr);
+	// printf("current_tid3 : %d\n", curr->tid);
 	if (tid == TID_ERROR) {
 		return TID_ERROR;
 	}
+	// printf("tid_t1 : %d\n", (int)tid);
 	struct thread *child = get_child_by_tid(tid);
+	// printf("tid_t2 : %d\n", tid);
 	sema_down(&child->fork_sema);
+
 	if (child->exit_status == -1) {
 		return TID_ERROR;
 	}
@@ -166,9 +171,12 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * */
 static void
 __do_fork (void *aux) {
+	// printf("current_tid2********************8 : %d\n", thread_current()->tid); // 4
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
-	struct thread *current = thread_current ();
+	struct thread *child = thread_current ();
+	// printf("parent_tid1@@@@@@@@@@@@@@@@@@@@@@@@@@ : %d\n", parent->tid); /// 3
+	// printf("current_tid2##################### : %d\n", thread_current()->tid); // 4
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	/* -------- Project 2 ----------- */
 	struct intr_frame *parent_if = &parent->parent_if;
@@ -180,11 +188,11 @@ __do_fork (void *aux) {
 
 	/* ----------------------------- */
 	/* 2. Duplicate PT */
-	current->pml4 = pml4_create();
-	if (current->pml4 == NULL)
+	child->pml4 = pml4_create();
+	if (child->pml4 == NULL)
 		goto error;
 
-	process_activate (current);
+	process_activate (child);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
@@ -217,22 +225,26 @@ __do_fork (void *aux) {
 				new_file = file_duplicate(file);
 			else
 				new_file = file;
-			current->fd_table[i] = new_file;
+			child->fd_table[i] = new_file;
 		}
 	}
-	current->fd_idx = parent->fd_idx;
+	child->fd_idx = parent->fd_idx;
 
 	// child loaded successfully, wake up parent in process_fork
-	sema_up(&current->fork_sema);
+	sema_up(&child->fork_sema);
 
 	// process_init (); 안함?
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
+	{
 		do_iret (&if_);
+		// printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d", thread_current()->tid);
+	}
+		
 error:
-	current->exit_status = TID_ERROR;
-	sema_up(&current->fork_sema);
+	child->exit_status = TID_ERROR;
+	sema_up(&child->fork_sema);
 	// thread_exit ();
 	exit(TID_ERROR);
 	/* ------------------------------- */
@@ -300,19 +312,32 @@ int process_wait (tid_t child_tid UNUSED) {
 	// for (int i = 0; i < 100000000; i ++) {} // infinite loop 추가
 	// while(1){};
 
+	// 현재쓰레드
 	struct thread *curr = thread_current();
+	// 자식 쓰레드
 	struct thread *child = get_child_by_tid(child_tid);
 
 	if (child == NULL) {
 		return -1;
 	}
+
 	// 부모가 자식이 종료될떄 까지 기다리기위해
 	// process_exit semaup => 1출력
-	// printf("process_wait1 : %d\n", child->wait_sema.value);
+	// printf("process_wait1 : %d\n", child->wait_sema.value); // 0 출력
+	// 자식 프로세스 안에 있는 wait_sema에서 wait함으로써
+	// 자식 프로세스가 종료될때까지 BLOCK 상태로 sema wait list에서 기다림
 	sema_down(&child->wait_sema);
-	// printf("process_wait2 : %d\n", child->wait_sema.value);
+
+	// printf("process_wait2 : %d\n", child->wait_sema.value); // 0 출력
+	// 자식 프로세스의 process_exit이 불려 종료되는 과정에서 자식이 자신의 wait_sema를 UP해준다.
+	// 그럼 부모는 자식의 exit_status를 가져온다.
 	int exit_status = child->exit_status;
-	list_remove(&child->child_elem);
+
+	// 부모 프로세스의 child list에서 자식 프로세스를 없앤다.
+	list_remove(&child->child_elem);	// 부모 프로세스의 child list에서 자식 프로세스를 없앤다.
+	
+	// 자식이 SLEEP하고 있던 free_sema를 fg UP해줌으로써
+	// 자식이 종료 과정을 계속할 수 있도록 한다.
 	sema_up(&child->free_sema);
 	return exit_status;
 }
@@ -340,7 +365,7 @@ process_exit (void) {
 	process_cleanup ();
 	
 	sema_up(&curr->wait_sema);
-	// printf("process_wait3 : %d\n", curr->wait_sema.value);
+	// printf("process_wait3 : %d\n", curr->wait_sema.value); // 1 출력
 	sema_down(&curr->free_sema);
 
 }
@@ -424,12 +449,12 @@ struct ELF64_hdr {
 struct ELF64_PHDR {
 	uint32_t p_type;
 	uint32_t p_flags;
-	uint64_t p_offset; // 끝나는지점
-	uint64_t p_vaddr; // 주소
-	uint64_t p_paddr; // 주소
-	uint64_t p_filesz; // 사이즈
-	uint64_t p_memsz; // 사이즈
-	uint64_t p_align; // 패딩맞추기
+	uint64_t p_offset; 	// 끝나는지점
+	uint64_t p_vaddr;  	// 주소
+	uint64_t p_paddr;  	// 주소
+	uint64_t p_filesz; 	// 사이즈
+	uint64_t p_memsz;  	// 사이즈
+	uint64_t p_align;  	// 패딩맞추기
 };
 
 /* Abbreviations */

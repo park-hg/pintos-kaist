@@ -57,7 +57,6 @@ sema_down (struct semaphore *sema) {
 		list_insert_ordered(&sema->waiters, &thread_current ()->elem, &cmp_priority, NULL);
 		thread_block ();
 	}
-	// printf("ㅗ\n");
 	sema->value--;
 	intr_set_level (old_level);
 }
