@@ -273,7 +273,7 @@ process_exec (void *f_name) {
 	// 인터럽트 당한, 원래 실행 중이었던 프로세스의 정보일부가 담긴다. (쓰레드끼리 공유하는부분 - 추측)
 	struct intr_frame _if;
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
-	_if.cs = SEL_UCSEG;
+	_if.cs = SEL_UCSEG;  
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
