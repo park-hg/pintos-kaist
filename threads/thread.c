@@ -177,6 +177,9 @@ void thread_start(void)
 	/* Create the idle thread. */
 	struct semaphore idle_started;
 	sema_init(&idle_started, 0);
+
+	// idle 스레드를 만들고 맨 처음 ready queue에 들어간다.
+	// semaphore를 1로 UP 시켜 공유 자원의 접근을 가능하게 한 다음 바로 BLOCK된다.
 	thread_create("idle", PRI_MIN, idle, &idle_started);
 
 	/* Start preemptive thread scheduling. */
@@ -282,25 +285,27 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	// 인터럽트 프레임
 	t->tf.rip = (uintptr_t)kernel_thread;
-	// printf("tid0!!!!!!!!!!!!!!!!!!! : %d\n", thread_current()->tid);
+	// printf("tid0!!!!!!!!!!!!!!!!!!! : %d\n", thread_current()->tid); // 3
 	t->tf.R.rdi = (uint64_t)function;
-	// printf("tid1??????????????????????! : %d\n", thread_current()->tid);
+	// printf("tid1??????????????????????! : %d\n", thread_current()->tid); // 3
 	t->tf.R.rsi = (uint64_t)aux;
 	t->tf.ds = SEL_KDSEG;
 	t->tf.es = SEL_KDSEG;
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-
+	// printf("tid1??????????????????????! : %d\n", thread_current()->tid); // 3
 	/* Add to run queue. */
 	// Thread의 unblock 후
 	thread_unblock(t);
+
 	// 현재 실행중인 thread와 우선순위를 비교하여, 새로 생성된 thread의 우선순위가 높다면
 	if (preempt_by_priority())
 	{
 		// thread_yield()를 통해 CPU를 양보.
 		thread_yield();
 	}
+	// printf("tid1??????????????????????! : %d\n", thread_current()->tid); // 3
 	return tid;
 }
 
@@ -347,7 +352,6 @@ void thread_unblock(struct thread *t)
 	// 선형팀색으로 적절한 자리 찾아서 들어가기(우선순위 낮은애를 뒤로)
 	list_insert_ordered(&ready_list, &t->elem, &cmp_priority, NULL);
 	t->status = THREAD_READY;
-
 	intr_set_level(old_level);
 }
 
@@ -417,12 +421,16 @@ void thread_yield(void)
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
 
+	// 외부 인터럽트를 수행중이라면 종료. 외부 인터럽트는 인터럽트 당하면 안 된다.
 	ASSERT(!intr_context());
 
-	old_level = intr_disable();
+	old_level = intr_disable();		// 인터럽트를 disable한다.
 
-	if (curr != idle_thread)
+	// 만약 현재 스레드가 idle 스레드가 아니라면 ready queue에 다시 담는다.
+	// idle 스레드라면 담지 않는다. 어차피 static으로 선언되어 있어, 필요할 때 불러올 수 있다.
+	if (curr != idle_thread) {
 		list_push_back(&ready_list, &curr->elem);
+	}
 
 	do_schedule(THREAD_READY);
 	intr_set_level(old_level);
@@ -497,14 +505,15 @@ idle(void *idle_started_ UNUSED)
 {
 	struct semaphore *idle_started = idle_started_;
 
+	// 현재 돌고 있는 스레드가 idle밖에 없다.
 	idle_thread = thread_current();
-	sema_up(idle_started);
+	sema_up (idle_started);  // semaphore의 값을 1로 만들어 줘 공유 자원의 공유(인터럽트) 가능!
 
 	for (;;)
 	{
 		/* Let someone else run. */
-		intr_disable();
-		thread_block();
+		intr_disable();		// 자기 자신(idle)을 BLOCK해주기 전까지 인터럽트 당하면 안되므로 먼저 disable한다.
+		thread_block();		// 자기 자신을 BLOCK한다.
 
 		/* Re-enable interrupts and wait for the next one.
 
@@ -538,9 +547,8 @@ kernel_thread(thread_func *function, void *aux)
 {
 	ASSERT(function != NULL);
 	intr_enable(); /* The scheduler runs with interrupts off. */
-	// printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d, %p\n", thread_current()->tid, function);  // 3
+	// printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d, %p\n", thread_current()->tid, function)
 	function(aux); /* Execute the thread function. */
-	// printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ %d\n", thread_current()->tid); // 4
 	thread_exit(); /* If function() returns, kill the thread. */
 }
 
@@ -573,7 +581,7 @@ init_thread(struct thread *t, const char *name, int priority)
 	list_init(&t->child_list);
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
-	sema_init(&t->free_sema, 0);
+	sema_init(&t->exit_sema, 0);
 
 	t->running = NULL;
 	/* ------------------------------ */
@@ -746,6 +754,7 @@ do_schedule(int status)
 		palloc_free_page(victim);
 	}
 	thread_current()->status = status;
+	// printf("tid *************************** : %d\n", thread_current()->tid);
 	schedule();
 }
 
@@ -807,6 +816,7 @@ schedule(void)
 		 * of current running.
 		 스레드를 전환하기 전에 먼저 전류 실행 정보를 저장합니다.
 		 */
+		// printf("tid !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! : %d\n", next->tid);
 		thread_launch(next);
 	}
 }
@@ -842,7 +852,9 @@ void thread_sleep(int64_t ticks)
 	struct thread *curr;
 	enum intr_level old_level;
 
-	ASSERT(!intr_context()); //?
+	// 외부 인터럽트 프로세스 수행 중이면 True, 아니면 False
+	ASSERT(!intr_context());
+	// 해당 과정중에는 인터럽트를 받아들이지 않는다.
 	old_level = intr_disable();
 	// 현재 쓰레드가
 	curr = thread_current();
@@ -862,7 +874,6 @@ void thread_sleep(int64_t ticks)
 	thread_block();
 	// 인터럽트 받읋수 있는 상태로 만들기
 	intr_set_level(old_level);
-	// 해당 과정중에는 인터럽트를 받아들이지 않는다.
 }
 
 /* make thread awake in timer_interrupt() (../device/timer.c) */
@@ -957,11 +968,11 @@ bool thread_donate_priority_compare(struct list_elem *element1, struct list_elem
 /* --------------------- project 2 ------------------------ */
 struct thread *get_child_by_tid(tid_t tid)
 {
-	struct thread *curr = thread_current();
+	struct thread *parent = thread_current();
 	struct thread *child;
-	struct list *child_list = &curr->child_list;
+	struct list *child_list = &parent->child_list;
 	struct list_elem *e;
-
+	// printf("tid1??????????????????????! : %d\n", thread_current()->tid); // 3
 	if (list_empty(child_list))
 	{
 		return NULL;
@@ -972,6 +983,7 @@ struct thread *get_child_by_tid(tid_t tid)
 		child = list_entry(e, struct thread, child_elem);
 		if (child->tid == tid)
 		{
+			// printf("tid1??????????????????????! : %d\n", thread_current()->tid); // 3
 			return child;
 		}
 	}

@@ -166,14 +166,14 @@ static struct file *get_file_from_fd_table(int fd) {
 
 /* Remove give fd from current thread fd_table */
 // 파일 디스크립터에 해당하는 파일을 닫고 해당 엔트리 초기화
-void remove_file_from_fdt(int fd)
-{
-	struct thread *cur = thread_current();
-	if (fd < 0 || fd >= FDCOUNT_LIMIT) /* Error - invalid fd */
-		return;
-	// File Descriptor에 해당하는 파일 객체의 파일을 제거
-	cur->fd_table[fd] = NULL;
-}
+// void remove_file_from_fdt(int fd)
+// {
+// 	struct thread *cur = thread_current();
+// 	if (fd < 0 || fd >= FDCOUNT_LIMIT) /* Error - invalid fd */
+// 		return;
+// 	// File Descriptor에 해당하는 파일 객체의 파일을 제거
+// 	cur->fd_table[fd] = NULL;
+// }
 
 /* Find available spot in fd_talbe, put file in  */
 // 파일 객체에 대한 파일 디스크립터 생성
@@ -224,7 +224,7 @@ int exec(const char *cmd_line) {
 	check_address(cmd_line);
 	/* 인자로 받은 파일 이름 문자열을 복사하여 이 복사본을 인자로 process_exec() 실행*/
 	char *cmd_line_cp;
-	
+	// printf("cmd_line #############################: %s\n", cmd_line);
 	int size = strlen(cmd_line);
 	cmd_line_cp = palloc_get_page(0);
 	if (cmd_line_cp == NULL) {
@@ -237,8 +237,6 @@ int exec(const char *cmd_line) {
 	}
 	/* Caller 프로세스는 do_iret() 후 돌아오지 못한다. */
 	NOT_REACHED();
-	// 이 값은 리턴되지 않는다. 즉, exec()은 오직 에러가 발생했을 때만 리턴한다.
-	return 0;
 }
 
 
@@ -433,10 +431,10 @@ void close (int fd) {
 	if (fd <= 1) {
 		return;
 	}
-	
-	remove_file_from_fdt(fd);
 
-	file_close(file_obj);
+	thread_current()->fd_table[fd] = NULL;
+	// remove_file_from_fdt(fd);
+	// file_close(file_obj);
 }
 
 /* ------------------------------- */

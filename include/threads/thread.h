@@ -1,6 +1,6 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
-#define USERPROG
+// #define USERPROG
 
 #include <debug.h>
 #include <list.h>
@@ -157,7 +157,7 @@ struct thread {
 	struct list_elem child_elem; /* elem for this thread's parent's child_list */
 	struct semaphore fork_sema;  /* parent thread should wait while child thread copy parent */
 	struct semaphore wait_sema;
-	struct semaphore free_sema;
+	struct semaphore exit_sema;
 	/* ------------------------------- */
 	
 #ifdef USERPROG
@@ -171,6 +171,7 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	// 스레드의 스택 맨 끝 값을 의미?
 	unsigned magic;                     /* Detects stack overflow. */
 };
 

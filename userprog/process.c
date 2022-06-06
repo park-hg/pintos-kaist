@@ -88,24 +88,28 @@ tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	/* ------------- project 2 ------------------ */
-	struct thread *curr = thread_current();
+	struct thread *parent = thread_current();
 	// 메모리
-	memcpy(&curr->parent_if, if_, sizeof(struct intr_frame));
+	memcpy(&parent->parent_if, if_, sizeof(struct intr_frame));
 	// printf("parent_tid : %d\n", parent->tid);
-	// printf("current_tid0 : %d\n", curr->tid);
-	tid_t tid = thread_create(name, curr->priority, __do_fork, curr);
+	// printf("current_tid1 : %d\n", thread_current()->tid); // 3
+	tid_t tid = thread_create(name, parent->priority, __do_fork, parent);
+	// printf("current_tid2 : %d\n", thread_current()->tid); // 3
 	// printf("current_tid3 : %d\n", curr->tid);
 	if (tid == TID_ERROR) {
 		return TID_ERROR;
 	}
+	
 	// printf("tid_t1 : %d\n", (int)tid);
 	struct thread *child = get_child_by_tid(tid);
+	
 	// printf("tid_t2 : %d\n", tid);
 	sema_down(&child->fork_sema);
 
 	if (child->exit_status == -1) {
 		return TID_ERROR;
 	}
+	// printf("current_tid2 : %d\n", thread_current()->tid); // 3
 	return tid;
 	/* ------------------------------------------ */
 	// return thread_create (name,
@@ -181,11 +185,11 @@ __do_fork (void *aux) {
 	/* -------- Project 2 ----------- */
 	struct intr_frame *parent_if = &parent->parent_if;
 	bool succ = true;
-
+	// printf("current_tid2##################### : %d\n", thread_current()->tf.R.rax); // 4
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	if_.R.rax = 0; /* child's return value = 0 */ // 부모자식 구분
-
+	// printf("current_tid2##################### : %d\n", thread_current()->tf.R.rax); // 4
 	/* ----------------------------- */
 	/* 2. Duplicate PT */
 	child->pml4 = pml4_create();
@@ -321,30 +325,27 @@ int process_wait (tid_t child_tid UNUSED) {
 		return -1;
 	}
 
-	// 부모가 자식이 종료될떄 까지 기다리기위해
-	// process_exit semaup => 1출력
-	// printf("process_wait1 : %d\n", child->wait_sema.value); // 0 출력
 	// 자식 프로세스 안에 있는 wait_sema에서 wait함으로써
 	// 자식 프로세스가 종료될때까지 BLOCK 상태로 sema wait list에서 기다림
 	sema_down(&child->wait_sema);
 
-	// printf("process_wait2 : %d\n", child->wait_sema.value); // 0 출력
 	// 자식 프로세스의 process_exit이 불려 종료되는 과정에서 자식이 자신의 wait_sema를 UP해준다.
-	// 그럼 부모는 자식의 exit_status를 가져온다.
-	int exit_status = child->exit_status;
+	// 그럼 부모는 자식의 exit_status를 가져온다. (자식은 부모가 리스트에서 삭제할때까지 대기)
+	int exit_status = child->exit_status; // 0
 
 	// 부모 프로세스의 child list에서 자식 프로세스를 없앤다.
 	list_remove(&child->child_elem);	// 부모 프로세스의 child list에서 자식 프로세스를 없앤다.
 	
-	// 자식이 SLEEP하고 있던 free_sema를 fg UP해줌으로써
-	// 자식이 종료 과정을 계속할 수 있도록 한다.
-	sema_up(&child->free_sema);
+	// 자식이 SLEEP하고 있던 exit_sema를 fg UP해줌으로써
+	// 자식이 종료 과정을 계속할 수 있도록 한다.(thread_exit)
+	sema_up(&child->exit_sema);
 	return exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
+	// fork일떄는 자식
 	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
@@ -357,16 +358,19 @@ process_exit (void) {
 		close(i);
 	}
 
-	//  프로세스 종료가 일어날 경우 프로세스에 열려있는 모든 파일을 닫음
+	// 프로세스 종료가 일어날 경우 프로세스에 열려있는 모든 파일을 닫음
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
-
 	file_close(curr->running);
 
-	process_cleanup ();
-	
+	// why clean up? do_iret()을 사용하여 PC와 레지스터의 값을 바꿔주어 실행시킬 프로세스로 전환된다.
+	// 그리고 다시 Caller로 돌아오는 일이 없다.
+	process_cleanup (); // 안하면 multi-oom Fail뜬다.
+
+	// 자식프로세스 종료 후 (대기하던)부모프로세스가 다음과정 할 수 있도록한다. 
 	sema_up(&curr->wait_sema);
-	// printf("process_wait3 : %d\n", curr->wait_sema.value); // 1 출력
-	sema_down(&curr->free_sema);
+
+	// 자식프로세스는 부모가 리스트에서 제외할동안(종료) 대기
+	sema_down(&curr->exit_sema);
 
 }
 
@@ -390,7 +394,13 @@ process_cleanup (void) {
 		 * process page directory.  We must activate the base page
 		 * directory before destroying the process's page
 		 * directory, or our active page directory will be one
-		 * that's been freed (and cleared). */
+		 * that's been freed (and cleared). 
+		 * 
+		 * 여기서 올바른 순서가 중요합니다.
+		 * 페이지 디렉토리를 전환하기 전에 cur->pageir를 NULL로 설정해야 타이머 인터럽트가 프로세스 페이지 디렉토리로 다시 전환되지 않습니다.
+		 * 프로세스의 페이지 디렉토리를 삭제하기 전에 기본 페이지 디렉토리를 활성화해야 합니다.
+		 * 그렇지 않으면 활성 페이지 디렉토리가 해제되어 지워집니다.
+		 * */
 		curr->pml4 = NULL;
 		pml4_activate (NULL);
 		pml4_destroy (pml4);
