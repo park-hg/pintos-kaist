@@ -283,7 +283,7 @@ process_exec (void *f_name) {
 	// printf("load_file_name: %s\n", file_name);  // => load_file_name: args-single onearg
 	success = load (file_name, &_if);
 
-	/* If load failed, quit. */
+	/* If load failed, quit. */  
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
