@@ -47,7 +47,7 @@ no_sti:
 	/* 인터럽트 프레임에 있는걸 레지스터에 넣는다. do_iret에서 함 */
 	/*  */
 	/* 커널 스택에 있는 데이터를 지움(이미 시스템콜을 호출한애꺼 - 아래 pop과정) */ 
-	movabs $syscall_handler, %r12	/* 시스템 콜 핸들러 부르기 */
+	movabs $syscall_handler, %r12	/* 시스템 콜 핸들러 부르기 */ /* 커널스택에서 팝해서 레지스터에 담기 */
 	call *%r12
 	popq %r15
 	popq %r14

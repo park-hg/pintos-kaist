@@ -72,7 +72,7 @@ initd (void *f_name) {
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
 
-	process_init ();
+	// process_init ();
 
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
@@ -181,7 +181,7 @@ __do_fork (void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	struct thread *child = thread_current ();
 	// printf("parent_tid1@@@@@@@@@@@@@@@@@@@@@@@@@@ : %d\n", parent->tid); /// 3
-	// printf("current_tid2##################### : %d\n", thread_current()->tid); // 4
+	// printf("current_tid2######################### : %d\n", thread_current()->tid); // 4
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	/* -------- Project 2 ----------- */
 	struct intr_frame *parent_if = &parent->parent_if;
@@ -270,7 +270,7 @@ process_exec (void *f_name) {
 	 * 현재 스레드가 다시 예약되면 실행 정보가 멤버에 저장되기 때문입니다
 	 * */
 
-	// 인터럽트 당한, 원래 실행 중이었던 프로세스의 정보가 담긴다. 
+	// 인터럽트 당한, 원래 실행 중이었던 프로세스의 정보일부가 담긴다. (쓰레드끼리 공유하는부분 - 추측)
 	struct intr_frame _if;
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
 	_if.cs = SEL_UCSEG;
@@ -657,6 +657,7 @@ void argument_stack(char **argv, int argc, struct intr_frame *if_) {
 
 	if_->rsp = if_->rsp - 8;
 	/* fake address(0) 저장*/
+	// 돌아갈 주소 저장
 	memset(if_->rsp, 0, sizeof(void *));
 
 	if_->R.rdi = argc;

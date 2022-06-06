@@ -269,7 +269,8 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 
 	// 프로세스 계층구조 구현
 	list_push_back(&parent->child_list, &t->child_elem);
-
+	tid = t->tid = allocate_tid();
+	
 	// File Descripter구현
 	// File Descriptor 테이블 메모리 할당
 	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES); // 해당 프로세스의 FDT 공간 할당
@@ -277,7 +278,6 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	{ // 제대로 공간이 할당되지 않았다면 에러.
 		return TID_ERROR;
 	}
-	tid = t->tid = allocate_tid();
 	t->fd_idx = 2;			// 0 : stdin, 1 : stdout이므로 새 파일이 open()하면 2부터 시작.
 	t->fd_table[0] = 1; // 의미가 있는 숫자는 아니다. 다만 해당 인덱스(식별자)를 사용하는 파일이 존재하므로 넣어준 것.
 	t->fd_table[1] = 2; // NULL 만들지 않으려고. 원래는 해당 파일을 가리키는 포인터가 들어가야함

@@ -94,6 +94,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_EXIT:
 			exit(f->R.rdi);
 			break;
+			// tid_t fork (const char *thread_name, struct intr_frame *f)
 		case SYS_FORK:
 			f->R.rax = fork(f->R.rdi, f);
 			break;
