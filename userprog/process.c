@@ -104,6 +104,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *child = get_child_by_tid(tid);
 	
 	// printf("tid_t2 : %d\n", tid);
+	// 자식 포크기다림
 	sema_down(&child->fork_sema);
 
 	if (child->exit_status == -1) {
@@ -318,7 +319,7 @@ int process_wait (tid_t child_tid UNUSED) {
 
 	// 현재쓰레드
 	struct thread *curr = thread_current();
-	// 자식 쓰레드
+	// 죽일자식 쓰레드
 	struct thread *child = get_child_by_tid(child_tid);
 
 	if (child == NULL) {

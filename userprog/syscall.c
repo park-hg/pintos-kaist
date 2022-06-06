@@ -144,7 +144,7 @@ void check_address (const uint64_t *user_addr) {
 	struct thread *curr = thread_current();
 	// is_user_vaddr =>Returns true if VADDR is a user virtual address.
 	// 유저 가상 메모리의 영역은 가상 주소 0부터 KERN_BASE까지이다.
-	if (user_addr = NULL || !(is_user_vaddr(user_addr))|| // 'KERN_BASE'보다 높은 값의 주소값을 가지는 경우 or 주소가 NULL인경우
+	if (user_addr = NULL || !(is_user_vaddr(user_addr))|| // 'KERN_BASE'보다 높은 값의 주소값을 가지는 경우(커널에 있음) or 주소가 NULL인경우
 	pml4_get_page(curr->pml4, user_addr) == NULL)	// 포인터가 가리키는 주소가 유저 영역 내에 있지만 페이지로 할당하지 않은 영역인 경우 => 둘중하나만 써도되나 확인하기
 	{
 		exit(-1);
@@ -261,11 +261,11 @@ bool remove (const char *file) {
 // 8. 파일을 열 때 사용하는 시스템 콜
 int open (const char *file) {
 	check_address(file);
-	lock_acquire(&filesys_lock);
+	// lock_acquire(&filesys_lock);
 
 	// 제대로 파일 생성됐는지 체크
 	if (file == NULL) {
-		lock_release(&filesys_lock);
+		// lock_release(&filesys_lock);
 		return -1;
 	}
 
@@ -274,7 +274,7 @@ int open (const char *file) {
 
 	// 파일이 없으면 종료
 	if (open_file == NULL) {
-		lock_release(&filesys_lock);
+		// lock_release(&filesys_lock);
 		return -1;
 	}
 
@@ -286,7 +286,7 @@ int open (const char *file) {
 		file_close(open_file);
 	}
 
-	lock_release(&filesys_lock);
+	// lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -352,6 +352,7 @@ int read (int fd, void *buffer, unsigned size) {
 
 
 // 11. 열린 파일의 데이터를 기록하는 시스템 콜
+// byte_cnt = write (handle, sample, sizeof sample - 1);
 int write (int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
 	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
