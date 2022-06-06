@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "cstdlib": "c",
-        "intrinsic.h": "c"
+        "intrinsic.h": "c",
+        "*.inc": "c"
     }
 }

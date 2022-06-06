@@ -250,6 +250,7 @@ void thread_print_stats(void)
 	 */
 
 // 	tid_t tid = thread_create(name, curr->priority, __do_fork, curr);
+// tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 tid_t thread_create(const char *name, int priority, thread_func *function, void *aux)
 {
 	struct thread *t;
