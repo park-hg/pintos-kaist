@@ -277,7 +277,7 @@ process_exec (void *f_name) {
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
-	process_cleanup ();  // 현재 프로세스가 사용하고 있던 pml4를 모두 반환한다.  
+	process_cleanup ();  // 현재 프로세스가 사용하고 있던 pml4를 모두 반환한다.
 
 	/* And then load the binary */
 	// printf("load_file_name: %s\n", file_name);  // => load_file_name: args-single onearg
