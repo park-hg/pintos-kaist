@@ -365,7 +365,7 @@ process_exit (void) {
 
 	// why clean up? do_iret()을 사용하여 PC와 레지스터의 값을 바꿔주어 실행시킬 프로세스로 전환된다.
 	// 그리고 다시 Caller로 돌아오는 일이 없다.
-	process_cleanup (); // 안하면 multi-oom Fail뜬다.
+	process_cleanup (); // 안하면 multi-oom Fail뜬다.  
 
 	// 자식프로세스 종료 후 (대기하던)부모프로세스가 다음과정 할 수 있도록한다. 
 	sema_up(&curr->wait_sema);
