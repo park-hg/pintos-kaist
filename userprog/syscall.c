@@ -146,7 +146,7 @@ void check_address (const uint64_t *user_addr) {
 	// is_user_vaddr =>Returns true if VADDR is a user virtual address.
 	// 유저 가상 메모리의 영역은 가상 주소 0부터 KERN_BASE까지이다.
 	if (user_addr = NULL || !(is_user_vaddr(user_addr))|| // 'KERN_BASE'보다 높은 값의 주소값을 가지는 경우(커널에 있음) or 주소가 NULL인경우
-	pml4_get_page(curr->pml4, user_addr) == NULL)	// 포인터가 가리키는 주소가 유저 영역 내에 있지만 페이지로 할당하지 않은 영역인 경우 => 둘중하나만 써도되나 확인하기
+	pml4_get_page(curr->pml4, user_addr) == NULL)	// 포인터가 가리키는 주소가 유저 영역 내에 있지만 페이지로 할당하지 않은 영역인 경우 => 둘중하나만 써도되나 확인하기  
 	{
 		exit(-1);
 	}

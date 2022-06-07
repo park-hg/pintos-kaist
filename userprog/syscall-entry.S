@@ -9,9 +9,9 @@ syscall_entry:
 	movq %r12, temp2(%rip)     /* callee saved registers */
 	movq %rsp, %rbx            /* Store userland rsp    rsp저장*/
 	movabs $tss, %r12
-	movq (%r12), %r12					/* 여기부터 커널!*/
+	movq (%r12), %r12					
 	movq 4(%r12), %rsp         /* Read ring0 rsp from the tss */
-	/* Now we are in the kernel stack */
+	/* Now we are in the kernel stack */ /* 여기부터 커널!*/
 	push $(SEL_UDSEG)      /* if->ss */
 	push %rbx              /* if->rsp */
 	push %r11              /* if->eflags */
