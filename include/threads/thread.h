@@ -5,9 +5,16 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
+
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
+#define FILE_NUM 128
 
 
 /* States in a thread's life cycle. */
@@ -85,13 +92,13 @@ typedef int tid_t;
  * only because they are mutually exclusive: only a thread in the
  * ready state is on the run queue, whereas only a thread in the
  * blocked state is on a semaphore wait list. */
-struct thread {
+struct  thread {
 	/* Owned by thread.c. */
 	tid_t tid;                          /* Thread identifier. */
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
-
+	
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -106,7 +113,32 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame temp_tf;
+
 	unsigned magic;                     /* Detects stack overflow. */
+
+	int64_t wakeup_tick; 					/* what tick to wake up */
+
+	int origin_priority;
+	struct lock *wait_on_lock;
+	struct list donations;
+	struct list_elem d_elem;
+	
+	int nice;
+	int recent_cpu;
+
+	struct file **fdt;
+	struct file *run_file;
+	int next_fd;
+
+	struct semaphore wait_sema;
+	struct semaphore fork_sema;
+	struct semaphore exit_sema;
+	
+	struct list child_list;
+	struct list_elem c_elem;
+
+	int exit_code;
 };
 
 /* If false (default), use round-robin scheduler.
@@ -142,5 +174,23 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+void thread_sleep (int64_t ticks);
+void thread_awake (int64_t ticks);
+
+void test_max_priority (void);
+
+bool cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool cmp_donate_priority (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
+
+void donate_priority (void);
+void remove_with_lock (struct lock *lock);
+void refresh_priority (void);
+
+void mlfqs_priority (struct thread *t);
+void mlfqs_recent_cpu (struct thread *t);
+void mlfqs_load_avg (void);
+void mlfqs_increment (void);
+void mlfqs_recalc (void);
 
 #endif /* threads/thread.h */

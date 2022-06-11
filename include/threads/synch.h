@@ -1,6 +1,7 @@
 #ifndef THREADS_SYNCH_H
 #define THREADS_SYNCH_H
 
+#include <debug.h>
 #include <list.h>
 #include <stdbool.h>
 
@@ -38,6 +39,7 @@ void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
+bool cmp_sem_priority (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 /* Optimization barrier.
  *
  * The compiler will not reorder operations across an

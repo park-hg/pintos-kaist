@@ -8,7 +8,7 @@ enum vm_type {
 	VM_UNINIT = 0,
 	/* page not related to the file, aka anonymous page */
 	VM_ANON = 1,
-	/* page that realated to the file */
+	/* page that related to the file */
 	VM_FILE = 2,
 	/* page that hold the page cache, for project 4 */
 	VM_PAGE_CACHE = 3,
@@ -17,7 +17,7 @@ enum vm_type {
 
 	/* Auxillary bit flag marker for store information. You can add more
 	 * markers, until the value is fit in the int. */
-	VM_MARKER_0 = (1 << 3),
+	VM_STACK = (1 << 3),
 	VM_MARKER_1 = (1 << 4),
 
 	/* DO NOT EXCEED THIS VALUE. */
@@ -27,6 +27,9 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+/* ------------------ project3 -------------------- */
+#include "hash.h"
+/* ------------------------------------------------ */
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -45,7 +48,38 @@ struct page {
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
+	
 	/* Your implementation */
+	/* ------------------ project3 -------------------- */
+
+	struct file *run_file;
+
+	enum vm_type type;
+
+	off_t ofs;
+	int file_size;
+	size_t read_bytes; 
+	size_t zero_bytes;
+	bool writable;
+	
+	struct hash_elem h_elem;
+
+	bool valid_bit; // is_loaded
+	bool reference_bit;
+	bool modified_bit;
+	bool accessed_bit;
+	bool dirty_bit;
+
+	/* Flag bits. */
+	/* Address bits. */
+	/* Bits available for OS use. */
+	/* 1=present, 0=not present. */
+	/* 1=read/write, 0=read-only. */
+	/* 1=user/kernel, 0=kernel only. */
+	/* 1=accessed, 0=not acccessed. */
+	/* 1=dirty, 0=not dirty (PTEs only). */
+
+	/* ------------------------------------------------ */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -59,11 +93,16 @@ struct page {
 	};
 };
 
+
 /* The representation of "frame" */
 struct frame {
 	void *kva;
 	struct page *page;
+	/* ------------------ project3 -------------------- */
+	struct list_elem f_elem;
+	/* ------------------------------------------------ */
 };
+
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
@@ -76,16 +115,23 @@ struct page_operations {
 	enum vm_type type;
 };
 
+
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
 #define swap_out(page) (page)->operations->swap_out (page)
 #define destroy(page) \
 	if ((page)->operations->destroy) (page)->operations->destroy (page)
 
+
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	
+	/* ------------------ project3 -------------------- */
+	struct hash hash_table;
+	/* ------------------------------------------------ */
 };
+
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
@@ -108,5 +154,10 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+
+static struct frame * vm_get_frame (void); // * 추가
 
 #endif  /* VM_VM_H */
