@@ -352,16 +352,33 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-	
+
 	/* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터
 		의 최소값인 2가 될 때까지 파일을 닫음 */
+#ifdef VM
+   	struct hash_iterator iter;
+
+	if (curr->spt.hash_table.buckets != NULL) {
+		hash_first (&iter, &curr->spt.hash_table);
+		while (hash_next (&iter))
+		{
+			struct page *p = hash_entry (hash_cur (&iter), struct page, h_elem);
+
+			if (p != NULL && p->is_mmapped)
+				munmap(p->va);
+		}
+	}
+
+	supplemental_page_table_kill (&curr->spt);
+#endif
+
 	for (int i = 0; i < FDCOUNT_LIMIT; i++) {
 		close(i);
 	}
+	file_close(curr->running);
 
 	// 프로세스 종료가 일어날 경우 프로세스에 열려있는 모든 파일을 닫음
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
-	file_close(curr->running);
 
 	// why clean up? do_iret()을 사용하여 PC와 레지스터의 값을 바꿔주어 실행시킬 프로세스로 전환된다.
 	// 그리고 다시 Caller로 돌아오는 일이 없다.
@@ -369,7 +386,6 @@ process_exit (void) {
 
 	// 자식프로세스 종료 후 (대기하던)부모프로세스가 다음과정 할 수 있도록한다. 
 	sema_up(&curr->wait_sema);
-
 	// 자식프로세스는 부모가 리스트에서 제외할동안(종료) 대기
 	sema_down(&curr->exit_sema);
 
@@ -379,10 +395,6 @@ process_exit (void) {
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
-
-#ifdef VM
-	supplemental_page_table_kill (&curr->spt);
-#endif
 
 	uint64_t *pml4;
 	/* Destroy the current process's page directory and switch back
@@ -612,56 +624,32 @@ done:
 	return success;
 }
 
-void argument_stack(char **argv, int argc, struct intr_frame *if_) { 
-	// if_는 인터럽트 스택 프레임 => 여기에다가 쌓는다.
-	
-	/* insert arguments' address */
-	char *arg_address[128];
-
-	// 거꾸로 삽입 => 스택은 반대 방향으로 확장하기 떄문!
-	
-	/* 맨 끝 NULL 값(arg[4]) 제외하고 스택에 저장(arg[0] ~ arg[3]) */
-	for (int i = argc-1; i>=0; i--) { 
-		int argv_len = strlen(argv[i]);
-		// if_->rsp: 현재 user stack에서 현재 위치를 가리키는 스택 포인터.
-		// 각 인자에서 인자 크기(argv_len)를 읽고 (이때 각 인자에 sentinel이 포함되어 있으니 +1 - strlen에서는 sentinel 빼고 읽음)
-		// 그 크기만큼 rsp를 내려준다. 그 다음 빈 공간만큼 memcpy를 해준다.
-		if_->rsp = if_->rsp - (argv_len + 1);
-		memcpy(if_->rsp, argv[i], argv_len+1);
-		arg_address[i] = if_->rsp; // arg_address => 배열에 현재 문자열 시작 주소 위치
-		// printf("argv : %s\n", argv[i]); 	// => argv : onearg  => argv : args-single
-		// printf("argc : %d\n", argv_len + 1);		// => 7 12 
+void argument_stack(char **arg, int count, struct intr_frame *if_)
+{
+	int i;
+	for (i = count - 1; i > -1; i--) {
+		if_->rsp -= (strlen(arg[i]) + 1);
+		memcpy(if_->rsp, arg[i], strlen(arg[i]) + 1);
+		arg[i] = if_->rsp;
 	}
 
-	/* word-align: 8의 배수 맞추기 위해 padding 삽입*/
-	// int k = 0;
-	while (if_->rsp % 8 != 0) 
-	{
-		// printf("%d\n", k++);		// 5번 출력
-		if_->rsp--; // 주소값을 1 내리고
-		memset(if_->rsp, 0, sizeof(uint8_t)); //데이터에 0 삽입 => 8바이트 저장
+	memset(if_->rsp & ~7, 0, if_->rsp - (if_->rsp & ~7));
+	if_->rsp &= ~7;
+
+	if_->rsp -= sizeof(char *);
+	memset(if_->rsp, 0, sizeof(char *));
+
+	for (i = count - 1; i > -1; i--) {
+		if_->rsp -= sizeof(char *);
+		memcpy(if_->rsp, &arg[i], sizeof(char *));
 	}
 
-	// 주소값 넣기
-	for (int i = argc; i >=0; i--) { 
-		// 여기서는 NULL 값 포인터도 같이 넣는다.
-		if_->rsp = if_->rsp - 8; // 8바이트만큼 내리고
-		if (i == argc) {
-			memset(if_->rsp, 0, sizeof(char **));
-		} else { // 나머지에는 arg_address 안에 들어있는 값 가져오기
-			memcpy(if_->rsp, &arg_address[i], sizeof(char **)); // char 포인터 크기: 8바이트
-			// printf("&arg_address[i] : %s\n", &arg_address[i]);
-			// printf("sizeof(char **) : %d\n", sizeof(char **));		// => 8
-		}	
-	}
+	if_->R.rdi = count;
+	if_->R.rsi = if_->rsp;
 
-	if_->rsp = if_->rsp - 8;
-	/* fake address(0) 저장*/
-	// 돌아갈 주소 저장
-	memset(if_->rsp, 0, sizeof(void *));
-
-	if_->R.rdi = argc;
-	if_->R.rsi = if_->rsp + 8;	
+	/* return address */
+	if_->rsp -= sizeof(void (*)());
+	memset(if_->rsp, 0, sizeof(void (*)()));
 }
 
 /* Checks whether PHDR describes a valid, loadable segment in
@@ -813,10 +801,20 @@ install_page (void *upage, void *kpage, bool writable) {
  * upper block. */
 
 static bool
-lazy_load_segment (struct page *page, void *aux) {
+lazy_load_segment (struct page *page, struct file_info *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	if (file_read_at (aux->file, page->frame->kva, aux->read_bytes, aux->ofs) != aux->read_bytes) {
+		vm_dealloc_page (page);
+		// free (aux);
+
+		return false;
+	}
+	memset (page->frame->kva + aux->read_bytes, 0, aux->zero_bytes);
+	// free (aux);
+
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -844,19 +842,26 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		/* Do calculate how to fill this page.
 		 * We will read PAGE_READ_BYTES bytes from FILE
 		 * and zero the final PAGE_ZERO_BYTES bytes. */
+		struct file_info *f_info = (struct file_info *) calloc (1, sizeof (struct file_info));
+
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+		f_info->file = file;
+		f_info->ofs = ofs;
+		f_info->read_bytes = page_read_bytes;
+		f_info->zero_bytes = page_zero_bytes;
+
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
+											writable, lazy_load_segment, f_info))
 			return false;
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
@@ -871,7 +876,10 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-
+	if (success = vm_alloc_page (VM_ANON | VM_STACK, stack_bottom, true)) {
+		if_->rsp = USER_STACK;
+		thread_current()->stack_bottom = stack_bottom;
+	}
 	return success;
 }
 #endif /* VM */

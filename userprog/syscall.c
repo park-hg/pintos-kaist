@@ -35,6 +35,8 @@ int write (int fd, const void *buffer, unsigned size);
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 /* ------------------------------- */
 
 /* System call.
@@ -132,6 +134,13 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_CLOSE:
 			close(f->R.rdi);
 			break;
+		case SYS_MMAP:
+			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap(f->R.rdi);
+			break;
+
 		default:
 			exit(-1);
 			break;
@@ -139,19 +148,36 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	/* ------------------------------- */
 }
 
-/* ---------- Project 2 ---------- */
-// 주소 값이 유저 영역 주소 값인지 확인 => 유저 영역을 벗어난 영역일 경우 프로세스 종료(exit(-1))
-void check_address (const uint64_t *user_addr) {
-	struct thread *curr = thread_current();
-	// is_user_vaddr =>Returns true if VADDR is a user virtual address.
-	// 유저 가상 메모리의 영역은 가상 주소 0부터 KERN_BASE까지이다.
-	if (user_addr = NULL || !(is_user_vaddr(user_addr))|| // 'KERN_BASE'보다 높은 값의 주소값을 가지는 경우(커널에 있음) or 주소가 NULL인경우
-	pml4_get_page(curr->pml4, user_addr) == NULL)	// 포인터가 가리키는 주소가 유저 영역 내에 있지만 페이지로 할당하지 않은 영역인 경우 => 둘중하나만 써도되나 확인하기  
-	{
+
+void 
+check_address(const uint64_t *addr) {
+	if (addr == NULL || is_kernel_vaddr(addr))
+		exit(-1);
+#ifdef VM	
+	struct page *p = spt_find_page (&thread_current ()->spt, addr);
+	// printf("check_address %p, page? %p\n", addr, p);
+	if (p == NULL) {
 		exit(-1);
 	}
+#endif
 }
 
+#ifdef VM
+void 
+check_valid_buffer(void *buffer, unsigned length) {
+	uint64_t size;
+	for (size = 0; size <= length; size += PGSIZE) {
+		void *addr = buffer + size;
+		if (addr == NULL || is_kernel_vaddr(addr))
+			exit(-1);
+
+		struct page *p = spt_find_page (&thread_current ()->spt, addr);
+		// printf("ADDR %p writable? %d\n", addr, p->writable);
+		if (p == NULL || !p->writable) 
+			exit(-1);
+	}
+}
+#endif
 
 /* Check validity of given file descriptor in current thread fd_table */
 // 프로세스의 파일 디스크립터 테이블을 검색하여 파일 객체의 주소를 리턴
@@ -308,7 +334,8 @@ int filesize (int fd) {
 // 10. 열린 파일의 데이터를 읽는 시스템 콜
 int read (int fd, void *buffer, unsigned size) {
 	// 유효한 주소인지 체크
-	check_address(buffer);
+	// check_address(buffer);
+	check_valid_buffer (buffer, size);
 	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 	lock_acquire(&filesys_lock);
 
@@ -438,5 +465,32 @@ void close (int fd) {
 	// remove_file_from_fdt(fd);
 	// file_close(file_obj);
 }
+void *
+mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
 
+	if (addr ==  NULL || is_kernel_vaddr(addr) || pg_ofs(addr))
+		return NULL;
+
+	if ((int64_t)length <= 0 || (int64_t)length < (int64_t)offset)
+		return NULL;
+
+	if (fd < 2)
+		return NULL;
+
+	/* Use the file_reopen function to obtain a separate and independent reference 
+	 * to the file for each of its mappings. */
+
+	struct file *ofile = file_reopen (get_file_from_fd_table(fd));
+	lock_acquire (&filesys_lock);
+	void *success = do_mmap (addr, length, writable, ofile, offset);
+	lock_release (&filesys_lock);
+	return success;
+}
+
+void 
+munmap (void *addr) {
+	check_address (addr);
+	do_munmap (addr);
+	return;
+}
 /* ------------------------------- */

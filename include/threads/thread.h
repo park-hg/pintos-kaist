@@ -159,6 +159,11 @@ struct thread {
 	struct semaphore wait_sema;
 	struct semaphore exit_sema;
 	/* ------------------------------- */
+
+	/* Project 3 */
+	uint64_t rsp;
+	void *stack_bottom;
+	/* --------- */
 	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
