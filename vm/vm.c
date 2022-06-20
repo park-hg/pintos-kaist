@@ -188,6 +188,7 @@ vm_get_victim (void) {
 	
 	ASSERT(!list_empty(&victim_list));
 
+	// lock_acquire (&victim_lock);
 	for (;;) {
 		e = list_pop_front (&victim_list);
 		struct page *victim_page = list_entry (e, struct page, v_elem);
@@ -200,11 +201,11 @@ vm_get_victim (void) {
 		else {
 
 			victim = victim_page->frame;
+			// lock_release (&victim_lock);
 
 			return victim;
 		}
 	}
-	// lock_release(&victim_lock);
 }
 
 /* Evict one page and return the corresponding frame.
@@ -252,9 +253,10 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
-	if (vm_alloc_page (VM_ANON | VM_STACK, pg_round_down(addr), true)) {
-		thread_current ()->stack_bottom -= PGSIZE;
-	}
+	// if (vm_alloc_page (VM_ANON | VM_STACK, pg_round_down(addr), true)) {
+	// 	thread_current ()->stack_bottom -= PGSIZE;
+	// }
+	vm_alloc_page (VM_ANON | VM_STACK, pg_round_down(addr), true);
 }
 
 /* Handle the fault on write_protected page */
@@ -280,18 +282,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 			if (addr < USER_STACK - MAX_STACK_SIZE || addr > USER_STACK) {
 				return false;
 			}
-			/********/
-			void *curr_rsp = is_kernel_vaddr(f->rsp) ? current->rsp : f->rsp;
-			if (curr_rsp - 8 <= addr) {
-				while (current->stack_bottom > addr) {
-					vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+
+			if (f->rsp - 8 <= addr) {
+				while (current->rsp >= addr) {
+					vm_stack_growth(current->rsp - PGSIZE);
+					current->rsp -= PGSIZE;
 				}
 				return true;
 			}
-			else {
-				return false;
-			}
-			/********/
+			return false;
 		}
 
 	}

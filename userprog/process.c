@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -89,32 +90,24 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	/* ------------- project 2 ------------------ */
 	struct thread *parent = thread_current();
-	// 메모리
-	memcpy(&parent->parent_if, if_, sizeof(struct intr_frame));
-	// printf("parent_tid : %d\n", parent->tid);
-	// printf("current_tid1 : %d\n", thread_current()->tid); // 3
+
+	// memcpy(&parent->parent_if, if_, sizeof(struct intr_frame));
+
 	tid_t tid = thread_create(name, parent->priority, __do_fork, parent);
-	// printf("current_tid2 : %d\n", thread_current()->tid); // 3
-	// printf("current_tid3 : %d\n", curr->tid);
+
 	if (tid == TID_ERROR) {
 		return TID_ERROR;
 	}
-	
-	// printf("tid_t1 : %d\n", (int)tid);
+
 	struct thread *child = get_child_by_tid(tid);
-	
-	// printf("tid_t2 : %d\n", tid);
-	// 자식 포크기다림
+
 	sema_down(&child->fork_sema);
 
 	if (child->exit_status == -1) {
 		return TID_ERROR;
 	}
-	// printf("current_tid2 : %d\n", thread_current()->tid); // 3
+
 	return tid;
-	/* ------------------------------------------ */
-	// return thread_create (name,
-	// 		PRI_DEFAULT, __do_fork, thread_current ());
 }
 
 #ifndef VM
@@ -129,8 +122,6 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-	/* ------------ project 2 ----------------  */
-	// 커널에서 복사하면 트루
 	if (is_kernel_vaddr(va)){
 		return true; // return false ends pml4_for_each, which is undesirable - just return true to pass this kernel va
 	}
@@ -176,22 +167,16 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * */
 static void
 __do_fork (void *aux) {
-	// printf("current_tid2********************8 : %d\n", thread_current()->tid); // 4
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *child = thread_current ();
-	// printf("parent_tid1@@@@@@@@@@@@@@@@@@@@@@@@@@ : %d\n", parent->tid); /// 3
-	// printf("current_tid2######################### : %d\n", thread_current()->tid); // 4
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	/* -------- Project 2 ----------- */
 	struct intr_frame *parent_if = &parent->parent_if;
 	bool succ = true;
-	// printf("current_tid2##################### : %d\n", thread_current()->tf.R.rax); // 4
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	if_.R.rax = 0; /* child's return value = 0 */ // 부모자식 구분
-	// printf("current_tid2##################### : %d\n", thread_current()->tf.R.rax); // 4
-	/* ----------------------------- */
 	/* 2. Duplicate PT */
 	child->pml4 = pml4_create();
 	if (child->pml4 == NULL)
@@ -213,7 +198,6 @@ __do_fork (void *aux) {
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
 
-	/* -------- Project 2 ----------- */
 	if (parent->fd_idx == FDCOUNT_LIMIT){
 		goto error;
 	}
@@ -223,15 +207,14 @@ __do_fork (void *aux) {
 		if(file == NULL)
 			continue;
 		// If 'file' is already duplicated in child, don't duplicate again but share it
-		bool found = false;
-		if (!found){
-			struct file *new_file;
-			if (file > 2)
-				new_file = file_duplicate(file);
-			else
-				new_file = file;
-			child->fd_table[i] = new_file;
-		}
+
+		struct file *new_file;
+		if (file > 2)
+			new_file = file_duplicate(file);
+		else
+			new_file = file;
+		
+		child->fd_table[i] = new_file;
 	}
 	child->fd_idx = parent->fd_idx;
 
@@ -358,6 +341,21 @@ process_exit (void) {
 	for (int i = 0; i < FDCOUNT_LIMIT; i++) {
 		close(i);
 	}
+
+#ifdef VM
+   	struct hash_iterator iter;
+
+	if (curr->spt.hash_table.buckets != NULL) {
+		hash_first (&iter, &curr->spt.hash_table);
+		while (hash_next (&iter))
+		{
+			struct page *p = hash_entry (hash_cur (&iter), struct page, h_elem);
+
+			if (p != NULL && p->is_mmapped)
+				munmap(p->va);
+		}
+	}
+#endif
 
 	// 프로세스 종료가 일어날 경우 프로세스에 열려있는 모든 파일을 닫음
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
@@ -513,15 +511,19 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Open executable file. */
 	// 현재 함수와 이름 모두 들어옴 => 이름만 들어오도록 수정해야함, filesys_open => 파일을 여는 함수
-	// printf("file_name: %s\n", file_name);	
+	// printf("file_name: %s\n", file_name);
+	lock_acquire(&filesys_lock);
+	// printf("thread id %d, load?? file name %s\n", thread_current()->tid, file_name);
 	file = filesys_open (file_name);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
+		lock_release(&filesys_lock);	
 		goto done;
 	}
 
 	file_deny_write(file);
 	t->running = file;
+	lock_release(&filesys_lock);	
 	
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -866,7 +868,7 @@ setup_stack (struct intr_frame *if_) {
 	/* TODO: Your code goes here */
 	if (success = vm_alloc_page (VM_ANON | VM_STACK, stack_bottom, true)) {
 		if_->rsp = USER_STACK;
-		thread_current()->stack_bottom = stack_bottom;
+		// thread_current()->stack_bottom = stack_bottom;
 	}
 	return success;
 }

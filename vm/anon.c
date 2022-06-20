@@ -54,12 +54,12 @@ anon_swap_in (struct page *page, void *kva) {
 	struct anon_page *anon_page = &page->anon;
 	size_t i;
 
-	// lock_acquire(&swap_lock);
+	lock_acquire(&swap_lock);
 	bitmap_flip (swap_table, page->swap_idx);
 	for (i = 0; i < SECTORS_PER_PAGE; i++) {
 		disk_read (swap_disk, SECTORS_PER_PAGE * page->swap_idx + i, kva + DISK_SECTOR_SIZE * i);
 	}
-	// lock_release(&swap_lock);
+	lock_release(&swap_lock);
 
 	return true;
 }
@@ -71,7 +71,7 @@ anon_swap_out (struct page *page) {
 	size_t idx = bitmap_scan (swap_table, 0, 1, false);
 	size_t i;
 
-	// lock_acquire(&swap_lock);
+	lock_acquire(&swap_lock);
 
 	bitmap_flip(swap_table, idx);
 
@@ -87,7 +87,7 @@ anon_swap_out (struct page *page) {
 	page->swap_idx = idx;
 	pml4_clear_page (page->thread->pml4, page->va);
 
-	// lock_release(&swap_lock);
+	lock_release(&swap_lock);
 
 	return true;
 }

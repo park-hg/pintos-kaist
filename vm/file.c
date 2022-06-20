@@ -3,6 +3,7 @@
 #include "vm/vm.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include <string.h>
 
 static bool file_backed_swap_in (struct page *page, void *kva);
@@ -142,15 +143,16 @@ do_munmap (void *addr) {
             return;
         
         if (pml4_is_dirty(thread_current ()->pml4, curr)) {
-
-            if (file_write_at (p->file.file, curr, p->file.read_bytes, p->file.ofs) != p->file.read_bytes)
+            lock_acquire(&filesys_lock);
+            if (file_write_at (p->file.file, curr, p->file.read_bytes, p->file.ofs) != p->file.read_bytes) {
+                lock_release(&filesys_lock);
                 return;
+            }
+            lock_release(&filesys_lock);
 
             pml4_set_dirty(thread_current ()->pml4, curr, false);
         }
 
         p->is_mmapped = false;
-        // memset(p->frame->kva, 0, PGSIZE);
-        // destroy (p);
     }
 }

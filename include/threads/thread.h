@@ -162,7 +162,7 @@ struct thread {
 
 	/* Project 3 */
 	uint64_t rsp;
-	void *stack_bottom;
+	// void *stack_bottom;
 	/* --------- */
 	
 #ifdef USERPROG

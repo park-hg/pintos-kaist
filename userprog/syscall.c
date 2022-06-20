@@ -77,18 +77,8 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-
-	// 시스템 호출 핸들러 syscall_handler()가 제어권을 얻을 때 시스템 호출 번호는 rax에 있고
-	// 인수는 %rdi, %rsi, %rdx, %r10, %r8, %r9의 순서로 전달됩니다.
-	// 1번째 인자: %rdi
-	// 2번째 인자: %rsi
-	// 3번째 인자: %rdx
-	// 4번째 인자: %r10
-	// 5번째 인자: %r8
-	// 6번째 인자: %r9
-
-
-	/* ---------- Project 2 ---------- */
+	thread_current ()->rsp = f->rsp;
+	memcpy(&thread_current()->parent_if, f, sizeof(struct intr_frame));
 	switch(f->R.rax) {
 		case SYS_HALT:
 			halt();
@@ -98,44 +88,44 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			break;
 			// tid_t fork (const char *thread_name, struct intr_frame *f)
 		case SYS_FORK:
-			f->R.rax = fork(f->R.rdi, f);
+			f->R.rax = (uint64_t)fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
-			if (exec(f->R.rdi) == -1)
+			exec(f->R.rdi);
 				exit(-1);
 			break;
 		case SYS_WAIT:
-			f->R.rax = process_wait(f->R.rdi);
+			f->R.rax = (uint64_t)process_wait(f->R.rdi);
 			break;
 		case SYS_CREATE:
-			f->R.rax = create(f->R.rdi, f->R.rsi);
+			f->R.rax = (uint64_t)create(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_REMOVE:
-			f->R.rax = remove(f->R.rdi);
+			f->R.rax = (uint64_t)remove(f->R.rdi);
 			break;
 		case SYS_OPEN:
-			f->R.rax = open(f->R.rdi);
+			f->R.rax = (uint64_t)open(f->R.rdi);
 			break;
 		case SYS_FILESIZE:
-			f->R.rax = filesize(f->R.rdi);
+			f->R.rax = (uint64_t)filesize(f->R.rdi);
 			break;
 		case SYS_READ:
-			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+			f->R.rax = (uint64_t)read(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_WRITE:
-			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
+			f->R.rax = (uint64_t)write(f->R.rdi, f->R.rsi, f->R.rdx);
 			break;
 		case SYS_SEEK:
 			seek(f->R.rdi, f->R.rsi);
 			break;
 		case SYS_TELL:
-			f->R.rax = tell(f->R.rdi);
+			f->R.rax = (uint64_t)tell(f->R.rdi);
 			break;
 		case SYS_CLOSE:
 			close(f->R.rdi);
 			break;
 		case SYS_MMAP:
-			f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			f->R.rax = (uint64_t)mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
 			break;
 		case SYS_MUNMAP:
 			munmap(f->R.rdi);
@@ -190,18 +180,6 @@ static struct file *get_file_from_fd_table(int fd) {
 	return curr->fd_table[fd];	/*return fd of current thread. if fd_table[fd] == NULL, it automatically returns NULL*/
 }
 
-
-/* Remove give fd from current thread fd_table */
-// 파일 디스크립터에 해당하는 파일을 닫고 해당 엔트리 초기화
-// void remove_file_from_fdt(int fd)
-// {
-// 	struct thread *cur = thread_current();
-// 	if (fd < 0 || fd >= FDCOUNT_LIMIT) /* Error - invalid fd */
-// 		return;
-// 	// File Descriptor에 해당하는 파일 객체의 파일을 제거
-// 	cur->fd_table[fd] = NULL;
-// }
-
 /* Find available spot in fd_talbe, put file in  */
 // 파일 객체에 대한 파일 디스크립터 생성
 int add_file_to_fdt(struct file *file) {
@@ -242,17 +220,21 @@ void exit(int status) {
 // 3. 현재 프로세스를 복사하는 시스템 콜
 tid_t fork (const char *thread_name, struct intr_frame *f) {
 	// check_address(thread_name);
-	return process_fork(thread_name, f);
+	// do not lock
+	lock_acquire (&filesys_lock);
+	tid_t ctid = process_fork(thread_name, f);
+	lock_release (&filesys_lock);
+	return ctid;
 }
 
 
 // 4. 
 int exec(const char *cmd_line) {
 	check_address(cmd_line);
-	/* 인자로 받은 파일 이름 문자열을 복사하여 이 복사본을 인자로 process_exec() 실행*/
+
 	char *cmd_line_cp;
-	// printf("cmd_line #############################: %s\n", cmd_line);
 	int size = strlen(cmd_line);
+
 	cmd_line_cp = palloc_get_page(0);
 	if (cmd_line_cp == NULL) {
 		exit(-1);
@@ -260,7 +242,7 @@ int exec(const char *cmd_line) {
 	strlcpy (cmd_line_cp, cmd_line, size + 1);
 
 	if (process_exec(cmd_line_cp) == -1) {
-		return -1;
+		exit(-1);
 	}
 	/* Caller 프로세스는 do_iret() 후 돌아오지 못한다. */
 	NOT_REACHED();
@@ -272,7 +254,10 @@ bool create (const char *file, unsigned initial_size) {
 	// 파일 이름과 크기에 해당하는 파일 생성
 	// 파일 생성 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
-	return filesys_create(file, initial_size);
+	lock_acquire(&filesys_lock);
+	bool success = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 
@@ -281,27 +266,30 @@ bool remove (const char *file) {
 	// 파일 이름에 해당하는 파일을 제거
 	// 파일 제거 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
-	return filesys_remove(file);
+	lock_acquire(&filesys_lock);
+	bool success = filesys_remove(file);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 
 // 8. 파일을 열 때 사용하는 시스템 콜
 int open (const char *file) {
 	check_address(file);
-	// lock_acquire(&filesys_lock);
 
 	// 제대로 파일 생성됐는지 체크
 	if (file == NULL) {
-		// lock_release(&filesys_lock);
 		return -1;
 	}
 
-	// 열려고 하는 파일구조체 받기
+	lock_acquire (&filesys_lock);
 	struct file *open_file = filesys_open(file);
+	// lock_release (&filesys_lock);
 
 	// 파일이 없으면 종료
 	if (open_file == NULL) {
-		// lock_release(&filesys_lock);
+		lock_release (&filesys_lock);
+
 		return -1;
 	}
 
@@ -310,12 +298,35 @@ int open (const char *file) {
 
 	// 파일을 열수 없으면 -1반환
 	if (fd == -1) {
+		// lock_acquire (&filesys_lock);
 		file_close(open_file);
+		// lock_release (&filesys_lock);
 	}
 
-	// lock_release(&filesys_lock);
+	lock_release(&filesys_lock);
 	return fd;
 }
+
+// int 
+// open (const char *file) {
+// 	check_address(file);
+
+// 	struct thread *curr = thread_current();
+// 	int i;
+// 	if (curr->fd_idx < FDCOUNT_LIMIT) {
+// 		lock_acquire(&filesys_lock);
+// 		struct file *new_file = filesys_open(file);
+// 		lock_release(&filesys_lock);
+
+// 		if (new_file != NULL) {
+// 			int fd = add_file_to_fdt (new_file);
+
+// 			return fd;
+// 		}
+// 	}
+
+// 	return -1;
+// }
 
 
 // 9. 파일의 크기를 알려주는 시스템 콜
@@ -327,7 +338,10 @@ int filesize (int fd) {
 		return -1;
 	}
 	// 파일의 크기를 알려주는 함수
-	return file_length(open_file);
+	lock_acquire(&filesys_lock);
+	int length = file_length(open_file);
+	lock_release(&filesys_lock);
+	return length;
 }
 
 
@@ -351,18 +365,19 @@ int read (int fd, void *buffer, unsigned size) {
 	/* 파일 디스크립터가 0일 경우 키보드에 입력을 버퍼에 저장 후
 		 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
 	if (fd == STDIN) {
-		int i;
-		unsigned char *buf = buffer;
-		for (i = 0; i < size; i++) {
-			// 키보드의 입력 버퍼에서 글자 하나씩을 받아 반환해주는 함수
-			char c = input_getc();
-			// 읽기 버퍼에 한 char씩 넣는다.
-			*buf++ = c;
-			// 종단문자 만나면 탈출
-			if (c == '\0')
-				break;
-		}
-		read_count = i;
+		// int i;
+		// unsigned char *buf = buffer;
+		// for (i = 0; i < size; i++) {
+		// 	// 키보드의 입력 버퍼에서 글자 하나씩을 받아 반환해주는 함수
+		// 	char c = input_getc();
+		// 	// 읽기 버퍼에 한 char씩 넣는다.
+		// 	*buf++ = c;
+		// 	// 종단문자 만나면 탈출
+		// 	if (c == '\0')
+		// 		break;
+		// }
+		// read_count = i;
+		read_count = input_getc();
 	}
 	/* STDOUT */
 	else if (fd == STDOUT) {
@@ -380,18 +395,15 @@ int read (int fd, void *buffer, unsigned size) {
 
 
 // 11. 열린 파일의 데이터를 기록하는 시스템 콜
-// byte_cnt = write (handle, sample, sizeof sample - 1);
 int write (int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
 	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
-	lock_acquire(&filesys_lock);
 
 	int write_count;
 	/* 파일 디스크립터를 이용하여 파일 객체 검색 */
 	struct file *file_obj = get_file_from_fd_table(fd);
 	
 	if (file_obj == NULL) {
-		lock_release(&filesys_lock);
 		return -1;
 	}
 
@@ -409,10 +421,13 @@ int write (int fd, const void *buffer, unsigned size) {
 	/* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기
 		 만큼 파일에 기록후 기록한 바이트 수를 리턴 */
 	else {
+		lock_acquire(&filesys_lock);
 		write_count = file_write(file_obj, buffer, size);
+		lock_release(&filesys_lock);
+
 	}
 
-	lock_release(&filesys_lock);
+	// lock_release(&filesys_lock);
 	// 기록한 바이트 수를 리턴
 	return write_count;
 }
@@ -430,13 +445,18 @@ void seek (int fd, unsigned position) {
 		return;
 	}
 	// 해당 열린 파일의 위치(offset)를 position만큼 이동	
+	lock_acquire(&filesys_lock);
 	file_seek(file_obj, position);
+	lock_release(&filesys_lock);
+
 }
 
 
 // 13. 열린 파일의 위치(offset)를 알려주는 시스템 콜
 unsigned tell (int fd) {
 	// 파일 디스크립터를 이용하여 파일 객체 검색
+	lock_acquire(&filesys_lock);
+
 	struct file *file_obj = get_file_from_fd_table(fd);
 	if (file_obj == NULL) {
 		return;
@@ -445,26 +465,45 @@ unsigned tell (int fd) {
 		return;
 	}
 	// 열린 파일의 위치를 반환	
-	file_tell(file_obj);	
+	unsigned success = file_tell(file_obj);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 
-// 14. 열린 파일을 닫는 시스템 콜
-void close (int fd) {
-	struct file *file_obj = get_file_from_fd_table(fd);
+// // 14. 열린 파일을 닫는 시스템 콜
+// void close (int fd) {
+// 	struct file *file_obj = get_file_from_fd_table(fd);
 
-	if (file_obj == NULL) {
-		return;
-	}
+// 	if (file_obj == NULL) {
+// 		return;
+// 	}
 
+// 	if (fd <= 1) {
+// 		return;
+// 	}
+
+// 	thread_current()->fd_table[fd] = NULL;
+
+// }
+void 
+close (int fd) {
 	if (fd <= 1) {
 		return;
+	}	
+	
+	struct file *file = get_file_from_fd_table(fd);
+
+	if (file != NULL) {
+		// lock_acquire (&filesys_lock);
+		file_close (file);
+		// lock_release (&filesys_lock);
 	}
 
-	thread_current()->fd_table[fd] = NULL;
-	// remove_file_from_fdt(fd);
-	// file_close(file_obj);
+	thread_current ()->fd_table[fd] = NULL;
+
 }
+
 void *
 mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
 
@@ -479,9 +518,8 @@ mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
 
 	/* Use the file_reopen function to obtain a separate and independent reference 
 	 * to the file for each of its mappings. */
-
-	struct file *ofile = file_reopen (get_file_from_fd_table(fd));
 	lock_acquire (&filesys_lock);
+	struct file *ofile = file_reopen (get_file_from_fd_table(fd));
 	void *success = do_mmap (addr, length, writable, ofile, offset);
 	lock_release (&filesys_lock);
 	return success;
