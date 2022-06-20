@@ -38,12 +38,15 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	file_page->ofs = f_info->ofs;
 	file_page->read_bytes = f_info->read_bytes;
 	file_page->zero_bytes = f_info->zero_bytes;
+    lock_acquire(&filesys_lock);
 
 	if (file_read_at (f_info->file, kva, f_info->read_bytes, f_info->ofs) != f_info->read_bytes) {
+        lock_release(&filesys_lock);
 		vm_dealloc_page (page);
 
 		return false;
 	}
+    lock_release(&filesys_lock);
     if (f_info->zero_bytes > 0)
 	    memset (kva + f_info->read_bytes, 0, f_info->zero_bytes);
 	
@@ -54,12 +57,15 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
+    lock_acquire(&filesys_lock);
 
 	if (file_read_at (file_page->file, kva, file_page->read_bytes, file_page->ofs) != file_page->read_bytes) {
+        lock_release(&filesys_lock);
 		vm_dealloc_page (page);
 
 		return false;
 	}
+    lock_release(&filesys_lock);
 
     if (file_page->zero_bytes > 0)
 	    memset (kva + file_page->read_bytes, 0, file_page->zero_bytes);
@@ -74,9 +80,13 @@ file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
 
     if (pml4_is_dirty(page->thread->pml4, page)) {
-        if (file_write_at (file_page->file, page->va, file_page->read_bytes, file_page->ofs) != file_page->read_bytes)
+        lock_acquire(&filesys_lock);
+        if (file_write_at (file_page->file, page->va, file_page->read_bytes, file_page->ofs) != file_page->read_bytes) {
+            lock_release(&filesys_lock);
             return false;
+        }
             
+        lock_release(&filesys_lock);
         pml4_set_dirty(page->thread->pml4, page, false);
     }
     pml4_clear_page (page->thread->pml4, page->va);
@@ -143,12 +153,12 @@ do_munmap (void *addr) {
             return;
         
         if (pml4_is_dirty(thread_current ()->pml4, curr)) {
-            lock_acquire(&filesys_lock);
+            // lock_acquire(&filesys_lock);
             if (file_write_at (p->file.file, curr, p->file.read_bytes, p->file.ofs) != p->file.read_bytes) {
-                lock_release(&filesys_lock);
+                // lock_release(&filesys_lock);
                 return;
             }
-            lock_release(&filesys_lock);
+            // lock_release(&filesys_lock);
 
             pml4_set_dirty(thread_current ()->pml4, curr, false);
         }

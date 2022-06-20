@@ -44,6 +44,7 @@ vm_init (void) {
 	// 확실하지 않음
 	// 프레임리스트 init
 	list_init(&victim_list);
+	lock_init(&victim_lock);
 	/* ------------------------------------------------ */
 }
 
@@ -188,7 +189,7 @@ vm_get_victim (void) {
 	
 	ASSERT(!list_empty(&victim_list));
 
-	// lock_acquire (&victim_lock);
+	lock_acquire (&victim_lock);
 	for (;;) {
 		e = list_pop_front (&victim_list);
 		struct page *victim_page = list_entry (e, struct page, v_elem);
@@ -201,7 +202,7 @@ vm_get_victim (void) {
 		else {
 
 			victim = victim_page->frame;
-			// lock_release (&victim_lock);
+			lock_release (&victim_lock);
 
 			return victim;
 		}
