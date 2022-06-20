@@ -352,33 +352,16 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
+	
 	/* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터
 		의 최소값인 2가 될 때까지 파일을 닫음 */
-#ifdef VM
-   	struct hash_iterator iter;
-
-	if (curr->spt.hash_table.buckets != NULL) {
-		hash_first (&iter, &curr->spt.hash_table);
-		while (hash_next (&iter))
-		{
-			struct page *p = hash_entry (hash_cur (&iter), struct page, h_elem);
-
-			if (p != NULL && p->is_mmapped)
-				munmap(p->va);
-		}
-	}
-
-	supplemental_page_table_kill (&curr->spt);
-#endif
-
 	for (int i = 0; i < FDCOUNT_LIMIT; i++) {
 		close(i);
 	}
-	file_close(curr->running);
 
 	// 프로세스 종료가 일어날 경우 프로세스에 열려있는 모든 파일을 닫음
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
+	file_close(curr->running);
 
 	// why clean up? do_iret()을 사용하여 PC와 레지스터의 값을 바꿔주어 실행시킬 프로세스로 전환된다.
 	// 그리고 다시 Caller로 돌아오는 일이 없다.
@@ -386,6 +369,7 @@ process_exit (void) {
 
 	// 자식프로세스 종료 후 (대기하던)부모프로세스가 다음과정 할 수 있도록한다. 
 	sema_up(&curr->wait_sema);
+
 	// 자식프로세스는 부모가 리스트에서 제외할동안(종료) 대기
 	sema_down(&curr->exit_sema);
 
@@ -395,6 +379,10 @@ process_exit (void) {
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
+
+#ifdef VM
+	supplemental_page_table_kill (&curr->spt);
+#endif
 
 	uint64_t *pml4;
 	/* Destroy the current process's page directory and switch back
