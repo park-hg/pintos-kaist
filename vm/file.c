@@ -25,7 +25,6 @@ vm_file_init (void) {
 
 /* Initialize the file backed page */
 
-// file_backed_initializer (page, VM_FILE, frame->kva) /*page already has been claimed.
 bool
 file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
@@ -100,6 +99,9 @@ file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
 }
 /* Do the mmap */
+/* MMAP syscall for memory mapped file */
+/* Every file-backed page should be mmapped */
+/* To claim file-backed page, the mmap should be called */
 void *
 do_mmap (void *addr, size_t length, int writable,
         struct file *file, off_t offset) {
@@ -126,6 +128,7 @@ do_mmap (void *addr, size_t length, int writable,
         f_info->read_bytes = page_length;
         f_info->zero_bytes = page_zero_bytes;
 
+        /* Set mmap flag true */
         if (!vm_alloc_page_with_initializer(VM_FILE, curr,
                                             writable, NULL, f_info))
             return NULL;
@@ -147,8 +150,10 @@ do_munmap (void *addr) {
     void *curr = addr;
     struct file *f = spt_find_page(spt, curr)->file.file;
 
+    /* Travel all mmapped pages consecutively */
     for (curr = addr; (spt_find_page(spt, curr) != NULL); curr += PGSIZE) {
         struct page *p = spt_find_page(spt, curr);
+        /* End of mmapped pages */
         if (!p->is_mmapped || p->file.file != f)
             return;
         
@@ -163,6 +168,7 @@ do_munmap (void *addr) {
             pml4_set_dirty(thread_current ()->pml4, curr, false);
         }
 
+        /* Turn off the flag */
         p->is_mmapped = false;
     }
 }

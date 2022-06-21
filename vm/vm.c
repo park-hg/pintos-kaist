@@ -102,6 +102,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 				memcpy (child_f->kva, parent_p->frame->kva, PGSIZE);
 				pml4_set_page (thread_current ()->pml4, child_p->va, child_f->kva, child_p->writable);
+				list_push_back (&victim_list, &child_p->v_elem);
 			}
 
 			if (!spt_insert_page (spt, child_p)) {
@@ -111,12 +112,42 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			return true;
 		}
 
+		/* -----------------COPY ON WRITE------------------- */
+		// if (type & VM_FORK) {
+		// 	struct page *parent_p = (struct page *) aux;
+		// 	struct page *child_p = newpage;
+			
+		// 	memcpy (child_p, parent_p, sizeof (struct page));
+
+		// 	if (parent_p->frame != NULL) {
+
+		// 		struct frame *child_f = (struct frame *) malloc (sizeof (struct frame));
+
+		// 		/* Set links */
+		// 		child_f->page = child_p;
+		// 		child_p->frame = child_f;
+
+		// 		/* Set writable of the child frame as false to detect write attempts on copy-on-writes pages. */
+		// 		child_f->kva = parent_p->frame->kva;
+		// 		pml4_set_page (thread_current ()->pml4, child_p->va, child_f->kva, false);
+		// 		list_push_back (&victim_list, &child_p->v_elem);
+		// 	}
+
+		// 	if (!spt_insert_page (spt, child_p)) {
+		// 		goto err;
+		// 	}
+			
+		// 	return true;
+		// }
+		/* -----------------COPY ON WRITE END------------------- */
+
 		switch (VM_TYPE(type)) {
 			case VM_ANON:
 				uninit_new (newpage, upage, init, type, aux, anon_initializer);
 				break;
 			case VM_FILE:
 				uninit_new (newpage, upage, init, type, aux, file_backed_initializer);
+				/* new page is mmapped */
 				newpage->is_mmapped = true;
 				break;
 			default:
@@ -184,12 +215,15 @@ vm_get_victim (void) {
 	 /* TODO: The policy for eviction is up to you. */
 	struct page *victim_page;
 	struct list_elem *e;
+
 	/* clock algorithm */
-	// if (!list_empty( &victim_list)) {
-	
+	/* global list of claimed pages */
+	/* each page belong to its own pml4, not current thread's */
+	/* CRITICAL SECTION */
 	ASSERT(!list_empty(&victim_list));
 
 	lock_acquire (&victim_lock);
+
 	for (;;) {
 		e = list_pop_front (&victim_list);
 		struct page *victim_page = list_entry (e, struct page, v_elem);
@@ -202,6 +236,7 @@ vm_get_victim (void) {
 		else {
 
 			victim = victim_page->frame;
+
 			lock_release (&victim_lock);
 
 			return victim;
@@ -214,10 +249,7 @@ vm_get_victim (void) {
 static struct frame *
 vm_evict_frame (void) {
 	/* TODO: swap out the victim and return the evicted frame. */
-	// PANIC("todo");
-	// lock_acquire(&victim_lock);
 	struct frame *victim = vm_get_victim ();
-	// lock_release(&victim_lock);
 
 	swap_out (victim->page);
 
@@ -232,7 +264,6 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
-	// 1. frame 할당 calloc으로 하면 안됨.
 	frame = malloc (sizeof (struct frame));
 	frame->page = NULL;
 	frame->kva = palloc_get_page (PAL_USER | PAL_ZERO);
@@ -240,9 +271,9 @@ vm_get_frame (void) {
 	if (frame->kva == NULL) {
 		struct frame *victim = vm_evict_frame ();
 		// palloc_free_page (victim->kva);
+		// frame->kva = palloc_get_page (PAL_USER | PAL_ZERO);
 		memset(victim->kva, 0, PGSIZE);
 		frame->kva = victim->kva;
-		// frame->kva = palloc_get_page (PAL_USER | PAL_ZERO);
 	}
 
 	ASSERT (frame != NULL);
@@ -254,15 +285,26 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
-	// if (vm_alloc_page (VM_ANON | VM_STACK, pg_round_down(addr), true)) {
-	// 	thread_current ()->stack_bottom -= PGSIZE;
-	// }
 	vm_alloc_page (VM_ANON | VM_STACK, pg_round_down(addr), true);
 }
 
 /* Handle the fault on write_protected page */
 static bool
 vm_handle_wp (struct page *page UNUSED) {
+	
+	struct frame *original_f = page->frame;
+	struct frame *copied_f = vm_get_frame ();
+	printf("vm_handle_wp ori_f %p\n", original_f);
+	copied_f->page = page;
+	page->frame = copied_f;
+
+	memcpy (copied_f->kva, page->frame->kva, PGSIZE);
+	pml4_clear_page(thread_current ()->pml4, page->va);
+	if (!pml4_set_page (thread_current ()->pml4, page->va, copied_f->kva, page->writable)) {
+		return false;
+	}
+	// free(original_f);
+	return true;
 }
 
 /* Return true on success */
@@ -276,6 +318,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	// page = spt_find_page (spt, addr);
+	// printf("not_present? %d, instance write %d, page->writable %p\n",not_present, write, page->writable);
 	if (not_present) {
 
 		page = spt_find_page (spt, addr);
@@ -283,7 +327,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 			if (addr < USER_STACK - MAX_STACK_SIZE || addr > USER_STACK) {
 				return false;
 			}
-
+			/* current->rsp : from SYSCALL_HANDLER */
+			/* inital transition from user mode to kernel mode may(?) occur at SYSCALL_HANDLER */
 			if (f->rsp - 8 <= addr) {
 				while (current->rsp >= addr) {
 					vm_stack_growth(current->rsp - PGSIZE);
@@ -295,6 +340,11 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		}
 
 	}
+
+	// if (write && !page->writable) {
+	// 	printf("thread_name %s write %d writable %d\n", thread_name (), write, page->writable);
+	// 	return vm_handle_wp(page);
+	// }
 
 	return vm_do_claim_page (page);
 }
@@ -374,7 +424,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 			next = list_next (elem);
 
 			struct hash_elem *h_elem = list_entry(elem, struct hash_elem, list_elem);
-			
 			struct page *p = hash_entry(h_elem, struct page, h_elem);
 
 			if (!vm_alloc_page_with_initializer (page_get_type(p) | VM_FORK, p->va, p->writable, NULL, p)) {
@@ -383,20 +432,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		}
 	}
 	return true;
-
-	// 보라
-	// struct hash_iterator i;
-
-	// hash_first (&i, &src->hash_table);
-	// while (hash_next (&i))
-	// {
-	// 	struct page *p = hash_entry (hash_cur (&i), struct page, h_elem);
-	// 	if (!vm_alloc_page_with_initializer (page_get_type(p) | VM_FORK, p->va, p->writable, NULL, p)) {
-	// 		return false;
-	// 	}
-	// }
-	// return true;
-
 }
 
 /* Free the resource hold by the supplemental page table */

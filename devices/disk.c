@@ -471,7 +471,7 @@ wait_until_idle (const struct disk *d) {
    The ATA standards say that a disk may take as long as that to
    complete its reset. */
 static bool
-wait_while_busy (const struct disk *d) {
+ wait_while_busy (const struct disk *d) {
 	struct channel *c = d->channel;
 	int i;
 

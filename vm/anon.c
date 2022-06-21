@@ -75,13 +75,9 @@ anon_swap_out (struct page *page) {
 
 	bitmap_flip(swap_table, idx);
 
-	// if (idx == (unsigned long)18446744073709551615UL)
-	// 	return false;
-
 	for (i = 0; i < SECTORS_PER_PAGE; i++) {
 		disk_write (swap_disk, SECTORS_PER_PAGE * idx + i, page->frame->kva + DISK_SECTOR_SIZE * i);
 	}
-	// puts("swap_out");
 
 	// bitmap_dump(swap_table);
 	page->swap_idx = idx;

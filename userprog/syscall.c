@@ -145,7 +145,6 @@ check_address(const uint64_t *addr) {
 		exit(-1);
 #ifdef VM	
 	struct page *p = spt_find_page (&thread_current ()->spt, addr);
-	// printf("check_address %p, page? %p\n", addr, p);
 	if (p == NULL) {
 		exit(-1);
 	}
@@ -162,7 +161,6 @@ check_valid_buffer(void *buffer, unsigned length) {
 			exit(-1);
 
 		struct page *p = spt_find_page (&thread_current ()->spt, addr);
-		// printf("ADDR %p writable? %d\n", addr, p->writable);
 		if (p == NULL || !p->writable) 
 			exit(-1);
 	}
@@ -217,10 +215,9 @@ void exit(int status) {
 	thread_exit();
 }
 
-// 3. 현재 프로세스를 복사하는 시스템 콜
 tid_t fork (const char *thread_name, struct intr_frame *f) {
 	// check_address(thread_name);
-	// do not lock
+
 	lock_acquire (&filesys_lock);
 	tid_t ctid = process_fork(thread_name, f);
 	lock_release (&filesys_lock);
@@ -228,7 +225,6 @@ tid_t fork (const char *thread_name, struct intr_frame *f) {
 }
 
 
-// 4. 
 int exec(const char *cmd_line) {
 	check_address(cmd_line);
 
@@ -249,10 +245,7 @@ int exec(const char *cmd_line) {
 }
 
 
-// 6. 파일을 생성하는 시스템 콜
 bool create (const char *file, unsigned initial_size) {
-	// 파일 이름과 크기에 해당하는 파일 생성
-	// 파일 생성 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
 	lock_acquire(&filesys_lock);
 	bool success = filesys_create(file, initial_size);
@@ -261,10 +254,7 @@ bool create (const char *file, unsigned initial_size) {
 }
 
 
-// 7. 파일을 삭제하는 시스템 콜
 bool remove (const char *file) {
-	// 파일 이름에 해당하는 파일을 제거
-	// 파일 제거 성공 시 true 반환, 실패 시 false 반환
 	check_address(file);
 	lock_acquire(&filesys_lock);
 	bool success = filesys_remove(file);

@@ -599,18 +599,12 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
-	/* ----------- project2 ---------- */
-
 	argument_stack(argv_list, argv_cnt, if_);	
-		
-	/*---------------------------------*/
-
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	// file_close (file);
+
 	return success;
 }
 
@@ -797,12 +791,10 @@ lazy_load_segment (struct page *page, struct file_info *aux) {
 	/* TODO: VA is available when calling this function. */
 	if (file_read_at (aux->file, page->frame->kva, aux->read_bytes, aux->ofs) != aux->read_bytes) {
 		vm_dealloc_page (page);
-		// free (aux);
 
 		return false;
 	}
 	memset (page->frame->kva + aux->read_bytes, 0, aux->zero_bytes);
-	// free (aux);
 
 	return true;
 }
@@ -868,7 +860,6 @@ setup_stack (struct intr_frame *if_) {
 	/* TODO: Your code goes here */
 	if (success = vm_alloc_page (VM_ANON | VM_STACK, stack_bottom, true)) {
 		if_->rsp = USER_STACK;
-		// thread_current()->stack_bottom = stack_bottom;
 	}
 	return success;
 }
